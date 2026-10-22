@@ -1,0 +1,3 @@
+﻿# Build-time dependencies only. End users do not need Python or pip.
+-r requirements.txt
+pyinstaller==6.22.3

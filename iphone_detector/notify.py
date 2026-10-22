@@ -1,0 +1,55 @@
+"""Windows notifications under the manager's own AppUserModelID."""
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+from iphone_detector.paths import ASSET_ROOT, FROZEN
+
+APP_ID = "Mobb.iPhoneIPAManager"
+
+
+def notify(title, message):
+    import pythoncom
+    from win32com.shell import shell
+    from win32com.propsys import propsys, pscon
+
+    pythoncom.CoInitialize()
+    try:
+        shortcut = (
+            Path(os.environ["APPDATA"])
+            / "Microsoft/Windows/Start Menu/Programs/iPhone IPA Manager.lnk"
+        )
+        shortcut.parent.mkdir(parents=True, exist_ok=True)
+        link = pythoncom.CoCreateInstance(
+            shell.CLSID_ShellLink, None, pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+        )
+        link.SetPath(sys.executable)
+        if not FROZEN:
+            link.SetArguments(subprocess.list2cmdline([str(ASSET_ROOT / "ipa_manager.py")]))
+        link.SetDescription("iPhone IPA Manager")
+        store = link.QueryInterface(propsys.IID_IPropertyStore)
+        store.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(APP_ID))
+        store.Commit()
+        link.QueryInterface(pythoncom.IID_IPersistFile).Save(str(shortcut), 1)
+    finally:
+        pythoncom.CoUninitialize()
+    script = (ASSET_ROOT / "iphone_detector/windows_notify.ps1").read_text(encoding="utf-8")
+    powershell = (
+        Path(os.environ.get("SystemRoot", r"C:\Windows"))
+        / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    )
+    result = subprocess.run(
+        [str(powershell), "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        env=dict(
+            os.environ, IPA_TOAST=json.dumps({"app": APP_ID, "title": title, "message": message})
+        ),
+    )
+    if result.returncode:
+        raise RuntimeError("Windows notification failed: " + result.stderr.strip()[-300:])
+    return json.loads(result.stdout.strip())

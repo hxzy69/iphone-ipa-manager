@@ -1,0 +1,114 @@
+import asyncio
+import dataclasses
+import logging
+import uuid
+from pathlib import Path
+
+from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
+from pymobiledevice3.remote.remote_service import RemoteService
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.safe_paths import resolve_device_path
+
+logger = logging.getLogger(__name__)
+
+MAX_CONCURRENT_DOWNLOADS = 4
+
+#: Capability the service advertises in the RSD handshake when DSC fetching is available.
+FEATURE_DSC_FILES = "com.apple.dt.remoteFetchSymbols.dyldSharedCacheFiles"
+
+
+@dataclasses.dataclass
+class DSCFile:
+    """A dyld shared cache file advertised by the device, with its on-device path and byte size."""
+
+    file_path: str
+    file_size: int
+
+
+class RemoteFetchSymbolsService(RemoteService):
+    """
+    Client for the `com.apple.dt.remoteFetchSymbols` RemoteXPC service (RSD/CoreDevice).
+
+    Lists the device's dyld shared cache (DSC) files and downloads them to the host,
+    preserving their on-device directory layout. Downloads run concurrently across up to
+    `MAX_CONCURRENT_DOWNLOADS` workers.
+
+    Inherits async context manager support from `RemoteService`; use within an
+    ``async with`` block to manage the underlying connection.
+    """
+
+    SERVICE_NAME = "com.apple.dt.remoteFetchSymbols"
+
+    def __init__(self, rsd: RemoteServiceDiscoveryService):
+        super().__init__(rsd, self.SERVICE_NAME)
+
+    async def get_dsc_file_list(self) -> list[DSCFile]:
+        """
+        Query the device for the list of available DSC files.
+
+        :returns: One `DSCFile` per advertised file, each carrying its on-device path and
+            expected byte length.
+        :raises DeviceFeatureNotSupportedError: if the device does not advertise the DSC
+            fetching capability.
+        """
+        self.rsd.require_feature(self.SERVICE_NAME, FEATURE_DSC_FILES)
+        files: list[DSCFile] = []
+        response = await self.service.send_receive_request({
+            "XPCDictionary_sideChannel": uuid.uuid4(),
+            "DSCFilePaths": [],
+        })
+        file_count = response["DSCFilePaths"]
+        for _i in range(file_count):
+            response = await self.service.receive_response()
+            response = response["DSCFilePaths"]
+            file_transfer = response["fileTransfer"]
+            expected_length = file_transfer["expectedLength"]
+            file_path = response["filePath"]
+            files.append(DSCFile(file_path=file_path, file_size=expected_length))
+        return files
+
+    async def download(self, out: Path, force: bool = True) -> None:
+        """
+        Download all DSC files into a local directory, reproducing their device paths.
+
+        Each file is written under `out` at its device-relative path (the leading "/" is
+        stripped), and progress is shown via a progress bar.
+
+        :param out: Destination directory; intermediate parent directories are created as needed.
+        :param force: Download files which already exist in `out` with the size the device reports,
+            instead of keeping them.
+        """
+        files = await self.get_dsc_file_list()
+        file_indexes: asyncio.Queue[int] = asyncio.Queue()
+        total = 0
+        for i, file in enumerate(files):
+            if not force:
+                out_file = resolve_device_path(out, file.file_path.removeprefix("/"))
+                if out_file.is_file() and out_file.stat().st_size == file.file_size:
+                    logger.info(f"Keeping the already downloaded {out_file}")
+                    continue
+            file_indexes.put_nowait(i)
+            total += file.file_size
+        if file_indexes.empty():
+            return
+
+        with ProgressBar(total=total, desc="dyld_shared_cache", unit=BYTES_UNIT) as pb:
+            workers = [self._download_files(files, file_indexes, out, pb) for _ in files[:MAX_CONCURRENT_DOWNLOADS]]
+            await asyncio.gather(*workers)
+
+    async def _download_files(
+        self, files: list[DSCFile], file_indexes: asyncio.Queue[int], out: Path, pb: ProgressBar
+    ) -> None:
+        while True:
+            try:
+                i = file_indexes.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+
+            file = files[i]
+            out_file = resolve_device_path(out, file.file_path.removeprefix("/"))
+            out_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_file, "wb") as f:
+                async for chunk in self.service.iter_file_chunks(file.file_size, file_idx=i):
+                    f.write(chunk)
+                    pb.update(len(chunk))

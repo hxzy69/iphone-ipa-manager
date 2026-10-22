@@ -1,155 +1,138 @@
-<a href="https://iloader.app">
-  <picture align="left" >
-    <source media="(prefers-color-scheme: dark)" srcset="/iloader.svg">
-    <img align="left" width="90" height="90" src="/iloader-dark.svg">
-  </picture>
-  
-  <div id="user-content-toc">
-    <ul style="list-style: none;">
-      <summary>
-        <h1>iloader</h1>
-      </summary>
-    </ul>
-  </div>
-</a>
+# iPhone IPA Manager
 
----
+A Windows desktop app for managing Apple accounts, installing assigned IPA files,
+and renewing provisioning profiles. An optional private Discord bot exposes the
+same saved assignments and job status.
 
-[![Build iloader](https://img.shields.io/github/actions/workflow/status/nab138/iloader/build.yml?style=flat&logo=github&logoColor=white&label=Build%20iloader)](https://github.com/nab138/iloader/actions/workflows/build.yml) ![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fnab138%2F28258aff7e3f1d3a3084a21f4cff2e57%2Fraw%2Filoader_downloads.json&style=flat)
-[![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/nab138)
+**Release status: 0.1.0 preview.** The existing installation engine has device
+testing behind it. This public distribution introduces clean onboarding and a
+smaller native helper; its validation and remaining device checks are recorded
+in [release validation](docs/VALIDATION.md). Experimental remote renewal is not
+a guarantee that an app will remain usable indefinitely.
 
-Install SideStore (or other apps) and import your pairing file with ease
+## Start here
 
-**This repository and [iloader.app](https://iloader.app) are the only official ways to download iloader. There is also an unofficial [Homebrew cask](https://formulae.brew.sh/cask/iloader), an unofficial [AUR package](https://aur.archlinux.org/packages/iloader-bin), and an unofficial [Fedora COPR repository](https://copr.fedorainfracloud.org/coprs/anudeepd/iloader) maintained by the community. Do not download from any other sources or websites.**
+1. Use Windows 11 x64. Install Apple's device software and confirm it recognizes
+   your unlocked iPhone over USB. Approve **Trust This Computer** on the phone.
+2. Extract the Windows release to a permanent folder and run
+   `iPhoneIPAManager.exe`. Python is not required for the standalone release.
+3. Choose a folder for your IPA files, then **Save settings**. Copy completed IPA
+   files there using any transfer tool.
+4. Click **Select connected iPhone**, then **Add Apple account**. Sign in locally,
+   complete Apple's verification, and choose an IPA to assign to that account.
+5. Click **Check setup**, then **Run now** for USB installation. The app works in
+   the background; **Stop** requests cancellation.
 
-<img width="1918" height="998" alt="iloader0" src="https://github.com/user-attachments/assets/93cd135d-6d89-46ee-9b9f-12c596806911" />
+Start with USB. Set up local Wi-Fi, remote access, Discord, and automatic renewal
+after the first installation works. The app includes an offline **Setup guide**.
 
-## How to use
+## What it does
 
-- Install usbmuxd for your platform
-  - Windows: [iTunes](https://apple.co/ms)
-  - macOS: Included
-  - Linux: Potentially included, if not, install via your package manager
-- Install the latest version for your platform from the [releases](https://github.com/nab138/iloader/releases)
-  - NixOS: Use the flake `github:nab138/iloader`
-  - Fedora: Use the .RPM or the unofficial [Fedora COPR repository](https://copr.fedorainfracloud.org/coprs/anudeepd/iloader)
-  - Arch: Use the unofficial [AUR package](https://aur.archlinux.org/packages/iloader-bin),
-- Plug in your iDevice to your computer
-- Open the app
-- Sign into your Apple ID
-- Select your action (e.g. install SideStore)
+- Keeps an ordered list of up to 25 accounts, each assigned one IPA. Apple limits
+  on apps, certificates, devices and App IDs still apply.
+- Accepts version changes by choosing a new file; no executable rebuild is needed.
+- Validates IPA archives and snapshots assignments before launching jobs.
+- Prefers an authenticated local-network route when available; otherwise uses an
+  already-established remote tunnel.
+- Supports profile-only renewal, with a full-install fallback for known profile
+  rejection, expiry, or pending IPA changes. Ambiguous transport failures stop for
+  inspection rather than blindly repeating an installation.
+- Checks an opt-in six-day renewal schedule at Windows sign-in and every 15
+  minutes. If the PC was off, an overdue run waits for a usable connection.
+- Shares settings between the desktop UI, Discord, and scheduled work. Conflicting
+  unsaved GUI edits require an explicit reload.
+- Stores the Discord token with Windows user encryption and Apple credentials
+  through the native backend's Windows Credential Manager integration.
 
-## Features
+## Optional features
 
-- Install SideStore (or LiveContainer + SideStore), import certificate and place rppairing+lockdown pairing files automatically
-- Import any IPA
-- Intelligent error suggestions to help resolve common issues
-- Manage pairing files in apps like StikDebug, SideStore, Protokolle, etc
-- See and revoke development certificates & app ids
+| Feature | Setup |
+| --- | --- |
+| Local Wi-Fi installation | [Connection guide](docs/CONNECTIONS.md): Apple Wi-Fi sync and a separately installed fixed-purpose bridge service |
+| Remote use through Tailscale | **Remote setup**, then establish a ready tunnel on home Wi-Fi before leaving |
+| Private Discord commands | **Discord setup** and [Discord guide](docs/DISCORD.md) |
+| Automatic renewal | Install all assigned apps first, verify remote refresh works, then use **Automatic renewal** or `/autorefresh` |
 
-## Troubleshooting
+The app never launches an administrator approval prompt. Installing Apple device
+drivers or the optional Windows bridge service is a separate local administrator
+task. Normal startup, account sign-in, installation and Discord control run with
+ordinary user permissions. Scheduled work requires the owner to be signed in;
+turning on the PC without signing in does not start the user-owned tasks.
 
-- If you are unable to solve an issue on your own, copy the full error message and ask on the [idevice Discord server](https://discord.gg/EA6yVgydBz) or [open an issue](https://github.com/nab138/iloader/issues).
-- You can view app logs with the "View Logs." If nothing is showing up, change the log level to "Debug."
-- If those logs aren't helpful, logs with additional are stored in the following locations:
-  - Windows: `%APPDATA%\me.nabdev.iloader\logs`
-  - macOS: `~/Library/Application Support/me.nabdev.iloader/logs`
-  - Linux: `~/.local/share/me.nabdev.iloader/logs/`
+## Discord commands
 
-## Translating
+`/panel` opens the control panel; `/help` explains the commands.
 
-iloader needs localization! If you speak another language and notice iloader does not support it or has mistakes, please consider contributing.
+| Command | Purpose |
+| --- | --- |
+| `/accounts`, `/files` | Browse account numbers, assignments and available IPAs |
+| `/login`, `/login_cancel` | Add an account with follow-up verification prompts, or cancel sign-in |
+| `/inbox`, `/assign` | Choose an account and IPA; `/inbox` also starts its installation |
+| `/sideload` | Fully sign and install all accounts, or a selected account |
+| `/refresh` | Renew all assigned apps; known invalid/expired profiles can trigger a full install |
+| `/status`, `/history`, `/check` | Connection, progress, receipts and setup checks |
+| `/settings`, `/autorefresh` | View or adjust supported preferences and scheduling |
+| `/stop` | Request safe cancellation of an active job |
 
-To update/edit an existing language, make a PR modifying `src/locales/<lang>.json`.
+Account and file options offer autocomplete. Commands are restricted to one
+configured owner, server and channel. Local sign-in avoids sending your Apple
+password through Discord; Discord sign-in remains optional and discloses its
+privacy implications before opening the form.
 
-To add a new language, add your language to `src/i18next.ts`, and in `src/locales` copy `en.json` to a new file titled `<langcode>.json` and update the strings.
+## Data and migration
 
-**i18next.ts:**
+Both source and EXE runs use `%LOCALAPPDATA%\iPhoneIPAManagerCommunity`. The source
+tree is not a settings directory. `IPA_MANAGER_DATA_DIR` can select another
+absolute path for development; keep it consistent across all launched processes.
+Task registration preserves an explicit custom directory in the action arguments.
 
-```ts
-const languages = [
-  ["en", "English"],
-  ["es", "Español"],
-  // Your language here...
-] as const;
+No existing personal installation is imported automatically. To migrate, stop its
+jobs, back up its state, and review [migration](docs/MIGRATION.md). Never commit
+live configuration, signing material, device pair records, or IPA files.
+
+## Development and release builds
+
+See [BUILDING.md](docs/BUILDING.md) for a clean Windows build, pinned dependencies,
+tests, license collection and release archives. The Python package retains the
+internal `iphone_detector` name to avoid breaking its worker protocol.
+
+```powershell
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\tools\build.ps1
 ```
 
-You can also add your name to the translators section of the README.
+Source layout:
 
-Thank you for translating!
-
-## Building from source
-
-1. Install [bun](https://bun.sh) (or [Node.js](https://nodejs.org)) and [Rust](https://www.rust-lang.org/tools/install)
-2. Clone the repository and `cd` into it
-3. Run `bun i` (or `npm i`)
-
-For development with hot reload: `bun tauri dev` (or `npm run tauri dev`)
-Make a production build: `bun tauri build` (or `npm run tauri build`)
+```text
+iphone_detector/   GUI, Discord, account state, jobs, transport and renewal
+native/            Headless Rust authentication/signing helper
+vendor/isideload/  Modified upstream signing/transport library
+tools/            Build, tests, dependency provenance and release checks
+tests/            Device-free regression tests with explicit sample accounts
+docs/             User, operator and contributor documentation
+```
 
 ## Credits
 
-- Icon made by [Transistor](https://github.com/transistor-exe)
-- UI improved by [StephenDev0](https://github.com/StephenDev0)
-- [idevice](https://github.com/jkcoxson/idevice) by [jkcoxson](https://github.com/jkcoxson) for communicating with iOS devices
-- [isideload](https://github.com/nab138/isideload) for installing apps
-  - [idevice](https://github.com/jkcoxson/idevice) by [jkcoxson](https://github.com/jkcoxson) crate is used to communicate with the device
-  - [apple-codesign-quick](https://github.com/Dadoum/apple-codesign-quick) by [Dadoum](https://github.com/Dadoum) for codesigning and entitlements
-  - [Impactor](https://github.com/claration/Impactor) by [claration](https://github.com/claration) was used as a reference for cryptography operations (converting certs to p12, etc.).
-  - [Sideloader](https://github.com/Dadoum/Sideloader) by [Dadoum](https://github.com/Dadoum) was used as a reference for how apple private developer endpoints work
-- [idevice_pair](https://github.com/jkcoxson/idevice_pair) was used as a reference for pairing file management
-- App made with [tauri](https://tauri.app)
+This project derives its native signing integration from
+[iloader](https://github.com/nab138/iloader), by nab138 and contributors.
+[JAS](https://github.com/jkcoxson/jas), by jkcoxson and contributors, inspired the
+profile-renewal and IP-device research; no JAS code was copied. It also relies on
+isideload, idevice, netmuxd, pymobiledevice3, the pmd networking libraries, and
+apple-codesign-quick. Their authors, source locations and license notices are
+credited in [NOTICE.md](NOTICE.md) and the release's dependency inventories.
 
-## Translators
 
-Thank you to everyone who has contributed translations! See the [Translating](#translating) section if you would like to contribute as well.
+## Limits and support
 
-- [By3lish](https://github.com/by3lish): Azerbaijani (az)
-- [TNT-333](https://github.com/TNT-333): German (de)
-- [basketshoe](https://github.com/basketshoe): Italian (it)
-- [baocreata](https://github.com/baocreata): Vietnamese (vt)
-- [IamArayel](https://github.com/IamArayel): French (fr)
-- [kkula9999](https://github.com/kkula9999): Traditional & Simplified Chinese (zh_tw & zh_cn)
-- [sibwaze](https://github.com/sibwaze): Russian (ru)
-- [notmalicik](https://github.com/notmalicik): Română (ro)
-- [mirdukkkkk](https://github.com/mirdukkkkk): Improved Russian (ru)
-- [okinaau](https://github.com/okinaau): Arabic (ar)
-- [ChouChiu](https://github.com/ChouChiu): Cantonese (zh_hk) & Improved Chinese (zh_tw & zh_cn)
-- [marcinmajsc](https://github.com/marcinmajsc): Polish (pl)
-- [ern775](https://github.com/ern775): Turkish (tr)
-- [canpng](https://github.com/canpng): Improved Turkish (tr)
-- [jazoppix](https://github.com/jazoppix): Spanish (es)
-- [eseiker](https://github.com/eseiker): Korean (ko)
-- [seomin0610](https://github.com/seomin0610): Improved Korean (ko)
-- [Ordyan777](https://github.com/Ordyan777): Armenian (am)
-- [kakik0u](https://github.com/kakik0u): Japanese (ja)
-- [lkspodmol](https://github.com/lkspodmol): Czech (cs_cz)
-- [marcusherelammonstyle-cmd](https://github.com/marcusherelammonstyle-cmd): Swedish (sv)
-- [MCI49312](https://github.com/MCI49312): Hungarian (hu)
-- [Kynonim](https://github.com/Kynonim): Indonesian (id)
-- [DD00031](https://github.com/DD00031): Dutch (nl)
-- [Toritan123](https://github.com/Toritan123): Improved Japanese (ja)
-- [marcinmajsc](https://github.com/marcinmajsc): Improved Polish (pl)
-- [dleiferives](https://github.com/dleiferives): Greek (el)
-- [ShadowWLX](https://github.com/ShadowWLX): Improved French (fr)
-- [fkpcomposer](https://github.com/fkpcomposer): Brazilian Portuguese (pt_br)
-- [474FrediFred](https://github.com/474FrediFred): Swiss German (de_ch)
-- [bovae](https://github.com/bovae) & [b1twalker](https://github.com/b1twalker): Ukranian (uk)
+VPN connectivity cannot make iOS expose a service that iOS has stopped listening
+on. Remote-only cold start and uninterrupted roaming are not guaranteed. Mobile
+transfer speed depends on the PC's upload, the mobile network, latency, and
+whether Tailscale uses a relay. A profile readback is not proof that an app will
+launch after the previous profile expires. See [known limits](docs/CONNECTIONS.md).
 
-## License
+Read [SECURITY.md](SECURITY.md) before sharing logs or reporting a security issue.
+Contributions are covered by [CONTRIBUTING.md](CONTRIBUTING.md). The public application is
+GPL-3.0-or-later; third-party components retain their licenses in [NOTICE.md](NOTICE.md).
 
-Copyright (C) 2026 nab138
-
-The source code of this repository is licensed under the MIT License. See the [LICENSE](/LICENSE) file for the full text.
-
-Branding, logos, media assets, and the name “iloader” are not licensed under the MIT License and are subject to separate restrictions.
-
-You may retain or use branding materials in forks, tutorials, or documentation if you include a clear link to either the official site (https://iloader.app) or the iloader source code repository (https://github.com/nab138/iloader) and do not imply official endorsement. See [LICENSE-BRANDING](/LICENSE-BRANDING) for full details.
-
-## Contributing
-
-Please read our [Contributing](/CONTRIBUTING.md) policy before making a contribution.
-
-## Future Plans
-
-iloader is currently being overhauled, see the [trello board](https://trello.com/b/hAe1LHTj/iloader) for more info!

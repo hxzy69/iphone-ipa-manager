@@ -1,0 +1,9 @@
+{
+  "crate": "apple-codesign-quick",
+  "version": "0.1.0",
+  "repository": "https://github.com/Dadoum/apple-crates",
+  "revision": "91fad87099663252dec23e4b5332a8ca979986f4",
+  "source": "https://crates.io/api/v1/crates/apple-codesign-quick/0.1.0/download",
+  "license": "LGPL-2.1-or-later",
+  "changes": "Unmodified registry source; accompanying license and provenance added."
+}

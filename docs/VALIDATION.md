@@ -1,0 +1,43 @@
+# Public preview validation
+
+Validation date: 2026-10-22. Target: Windows x64, Python 3.14.8.
+
+## Checks performed
+
+- Clean Python virtual environment installed from the resolved lock.
+- Device-free regression suite: 212 tests passed, including empty onboarding,
+  first-account enrollment, saved assignment consistency, private Discord controls,
+  scheduler recovery, profile fallback and release boundaries.
+- Ruff lint and formatting checks; native Rust formatting and release compilation.
+- Native helper authentication protocol rejected invalid input before network access.
+- Packaged runtime: all 14 checks passed; the receipt records the executable SHA-256.
+- Release-notice collection rejects bytecode, code files, and private build paths.
+- Companion executable hashes and embedded build-profile path checks passed.
+- Public source allowlist audit passed without live configuration or private assets.
+- GPL transport sources default to userspace mode without importing Wintun.
+- The matching source archive accompanies the Windows distribution; upstream GPL
+  and LGPL source and license notices are included.
+- GUI construction and live settings bindings exercised by Tk tests. A desktop
+  screenshot inspection was limited by an existing Windows firewall permission
+  dialog; no firewall or security permissions were changed.
+
+Packaged runtime and archive results are written to `dist/self-test.json` and
+`artifacts/source-audit.json` during the release build. Their presence and successful
+status are required by the packaging tool. Review the actual receipts with this file.
+
+## Acceptance still required before a stable release
+
+The original private installation has prior real-device results. Those results
+are not a substitute for acceptance of this public EXE and its new onboarding.
+This build has not performed a real Apple sign-in, USB install, Wi-Fi install,
+cellular install, new-user RemotePairing, reboot/startup test, six-day unattended
+cycle, or app-launch check after the old provisioning profiles expire.
+
+RemotePairing setup and local verification prompts need testing on a clean user
+profile with a consenting device. Profile readback alone does not prove long-term
+renewal compatibility. The release is unsigned and is labeled **preview**, rather
+than presenting those remaining checks as completed.
+
+The preparation did not replace the existing private release or change its bot,
+scheduled tasks, remote tunnel, device state or private configuration. No GitHub
+repository was created and no artifacts were published.

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get started · iPhone IPA Manager</title>
+<style>
+  :root { color-scheme: dark; font: 16px/1.65 "Segoe UI", system-ui, sans-serif; color: #edf3f7; background: #101820; }
+  body { margin: 0; }
+  main { max-width: 920px; margin: auto; padding: 48px 28px 80px; }
+  .eyebrow { color: #49d8bd; letter-spacing: .13em; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+  h1 { font-size: clamp(30px, 5vw, 48px); line-height: 1.15; letter-spacing: -.03em; margin: 14px 0; }
+  h2 { font-size: 24px; margin-top: 38px; }
+  h3 { font-size: 18px; margin: 0 0 6px; }
+  p { margin: 10px 0; }
+  .intro, .muted { color: #aec0cb; }
+  .steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 28px 0; }
+  article { background: #19252f; border: 1px solid #30414e; border-radius: 12px; padding: 22px; }
+  .number { color: #49d8bd; font-weight: 700; margin-bottom: 10px; }
+  .note { padding: 16px 20px; border-left: 3px solid #49d8bd; background: #19252f; margin: 22px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 12px; text-align: left; border-bottom: 1px solid #30414e; vertical-align: top; }
+  th { color: #49d8bd; }
+  a { color: #7ae4cf; }
+  code { font-size: .9em; color: #d1e5ee; overflow-wrap: anywhere; }
+  footer { border-top: 1px solid #30414e; margin-top: 44px; padding-top: 18px; font-size: 13px; color: #aec0cb; }
+  @media (max-width: 650px) { .steps { grid-template-columns: 1fr; } main { padding: 30px 20px 60px; } }
+</style>
+<main>
+  <div class="eyebrow">iPhone IPA Manager · 0.1.0 preview</div>
+  <h1>Your first installation,<br>one step at a time.</h1>
+  <p class="intro">Start with USB. Add wireless access and Discord once a manual installation works.
+    No Python is needed for the Windows standalone release.</p>
+  <div class="steps">
+    <article><div class="number">01 / Prepare</div><h3>Connect and trust your iPhone</h3>
+      <p>Install Apple Devices or iTunes with mobile-device support. Unlock the phone, connect a data cable,
+        and approve <strong>Trust This Computer</strong>. Confirm Apple's app can see it.</p></article>
+    <article><div class="number">02 / Choose files</div><h3>Save an IPA folder</h3>
+      <p>Run <strong>iPhoneIPAManager.exe</strong> from a permanent folder. Browse to a folder containing completed
+        IPA files, then click <strong>Save settings</strong>. Any transfer app may save files there.</p></article>
+    <article><div class="number">03 / Add an account</div><h3>Sign in and assign an IPA</h3>
+      <p>Click <strong>Select connected iPhone</strong>, then <strong>Add Apple account</strong>.
+        Enter credentials locally, complete Apple verification, and choose the app to assign. Repeat for more accounts.</p></article>
+    <article><div class="number">04 / Install</div><h3>Check, run, and verify</h3>
+      <p>Click <strong>Check setup</strong>, then <strong>Run now</strong>. Keep the phone connected.
+        Wait for verified completion and open the installed app. Follow any iOS Developer Mode or developer-trust instructions.</p></article>
+  </div>
+  <div class="note">The manager runs in the background. <strong>Stop</strong> requests cancellation;
+    a device operation may take time to finish. Inspect uncertain results before retrying.</div>
+  <h2>When you're ready for more</h2>
+  <table>
+    <tr><th>Feature</th><th>What to do</th></tr>
+    <tr><td>Update an app version</td><td>Copy the new IPA to the managed folder, choose it on the account card and save.
+      The next install and renewal use that assignment.</td></tr>
+    <tr><td>Local Wi-Fi</td><td>Enable Apple Wi-Fi sync while connected by USB. A fixed-purpose Windows bridge must
+      be installed separately by a local administrator. The application never opens a UAC prompt.</td></tr>
+    <tr><td>Remote connection</td><td>Install official Tailscale on both devices. On home Wi-Fi, keep USB connected and
+      the phone unlocked, then use <strong>Remote setup</strong>. Wait for <strong>Remote tunnel ready</strong> before leaving home.</td></tr>
+    <tr><td>Discord</td><td>Use <strong>Discord setup</strong> to enter your owner/server/channel IDs and bot token locally.
+      Invite the bot with bot + applications.commands scopes and View Channel / Send Messages permissions.
+      Start it and try <code>/panel</code>.</td></tr>
+    <tr><td>Six-day renewal</td><td>Install all assigned apps and verify refresh works first. Enable <strong>Automatic renewal</strong>.
+      The signed-in PC checks every 15 minutes and catches up when a usable connection returns.</td></tr>
+  </table>
+  <h2>Know the limits</h2>
+  <p>A VPN does not force iOS to expose its installation service. Mobile-only cold starts and uninterrupted roaming
+    are not guaranteed. A lost remote tunnel may need home Wi-Fi to reconnect.</p>
+  <p>Profile-only renewal is experimental. Known rejection or expiry can trigger a full install, which may transfer
+    a large amount of mobile data. Apple account and device limits still apply.</p>
+  <h2>If something needs attention</h2>
+  <p>Check USB trust, available storage, Apple developer requirements and the current connection. Use
+    <strong>Open activity logs</strong> or Discord <code>/history</code>. Don't publish unreviewed logs: they can contain
+    account emails, device identifiers and paths.</p>
+  <p>Settings live in <code>%LOCALAPPDATA%\iPhoneIPAManagerCommunity</code>. Keep a private backup.
+    The release contains no saved accounts, token, device pairing or IPA files.</p>
+  <footer>Independent community software. Not endorsed by Apple, Discord, Tailscale or iloader.
+    Native integration derived from <a href="https://github.com/nab138/iloader">iloader</a>.
+    Research inspiration: <a href="https://github.com/jkcoxson/jas">JAS by jkcoxson and contributors</a>.
+    See the source documentation and bundled third-party notices for details.</footer>
+</main>
+</html>

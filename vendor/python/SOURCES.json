@@ -1,0 +1,31 @@
+{
+  "packages": [
+    {
+      "name": "pymobiledevice3",
+      "version": "11.38.0",
+      "source": "https://pypi.org/project/pymobiledevice3/11.38.0/",
+      "license": "GPL-3.0-or-later"
+    },
+    {
+      "name": "pmd_pytcp",
+      "version": "0.3.8",
+      "source": "https://pypi.org/project/pmd-pytcp/0.3.8/",
+      "license": "GPL-3.0-or-later"
+    },
+    {
+      "name": "pmd_net_addr",
+      "version": "0.0.3",
+      "source": "https://pypi.org/project/pmd-net-addr/0.0.3/",
+      "license": "GPL-3.0-or-later"
+    },
+    {
+      "name": "pmd_net_proto",
+      "version": "0.0.3",
+      "source": "https://pypi.org/project/pmd-net-proto/0.0.3/",
+      "license": "GPL-3.0-or-later"
+    }
+  ],
+  "changes": {
+    "pymobiledevice3": "Remote tunnel defaults to userspace mode; optional kernel-TUN import is lazy. Other modules are unmodified."
+  }
+}

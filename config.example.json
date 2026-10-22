@@ -1,0 +1,12 @@
+{
+  "device": {},
+  "automation": {
+    "accounts": [],
+    "background_mode": true,
+    "install_timeout": 900,
+    "wifi_archive_transfer": true,
+    "notify_on_finish": true,
+    "close_gui_after_success": false
+  }
+}
+

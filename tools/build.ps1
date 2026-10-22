@@ -37,7 +37,9 @@ try {
         }
         $nativeOutput = Join-Path $projectRoot 'native\target\release\iloader-wifi.exe'
         if ($env:CARGO_TARGET_DIR) { $nativeOutput = Join-Path $env:CARGO_TARGET_DIR 'release\iloader-wifi.exe' }
-        Copy-Item -LiteralPath $nativeOutput -Destination 'tools/optimized-iloader/iloader-wifi.exe'
+        $nativeDestination = Join-Path $projectRoot 'tools\optimized-iloader\iloader-wifi.exe'
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $nativeDestination) | Out-Null
+        Copy-Item -LiteralPath $nativeOutput -Destination $nativeDestination
         $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
         Invoke-Checked $compiler @('/nologo', '/target:exe', '/optimize+', '/reference:System.ServiceProcess.dll',
             '/out:tools\wifi-service\BridgeService.exe', 'tools\wifi-service\BridgeService.cs')

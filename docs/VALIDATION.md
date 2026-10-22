@@ -41,3 +41,17 @@ than presenting those remaining checks as completed.
 The preparation did not replace the existing private release or change its bot,
 scheduled tasks, remote tunnel, device state or private configuration. No GitHub
 repository was created and no artifacts were published.
+
+
+## 0.1.1 authentication retry fix
+
+The native backend now retries transient authentication request failures and login
+timeouts before signing or installation. Regression tests cover retryable request
+errors and rejection of credential, verification and provisioning failures.
+Release builds run those native tests as well as the Python regression suite and
+packaged self-test.
+
+The corresponding private development build completed a three-account profile
+refresh on home Wi-Fi, with profile readback verified for each account and zero
+full installations. This verifies the deployed private path; the public build's
+remaining clean-machine and long-term acceptance requirements above still apply.

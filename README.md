@@ -4,7 +4,7 @@ A Windows desktop app for managing Apple accounts, installing assigned IPA files
 and renewing provisioning profiles. An optional private Discord bot exposes the
 same saved assignments and job status.
 
-**Release status: 0.1.0 preview.** The existing installation engine has device
+**Release status: 0.1.1 preview.** The existing installation engine has device
 testing behind it. This public distribution introduces clean onboarding and a
 smaller native helper; its validation and remaining device checks are recorded
 in [release validation](docs/VALIDATION.md). Experimental remote renewal is not

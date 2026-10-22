@@ -201,7 +201,7 @@ async fn execute(job: Job, folder: &Path, completed: &mut usize) -> Result<(), R
                 login(&account.email, &job.anisette_server),
             )
             .await
-            .context("Apple login timed out")?
+            .unwrap_or_else(|_| Err(report!("Apple login timed out")))
             {
                 Ok(value) => {
                     signed_in = Some(value);
@@ -209,12 +209,12 @@ async fn execute(job: Job, folder: &Path, completed: &mut usize) -> Result<(), R
                 }
                 Err(error) => {
                     let error = error.to_string();
-                    if error.to_string().contains("-22406") && attempt < 3 {
+                    if retryable_login_error(&error) && attempt < 3 {
                         status(
                             folder,
                             json!({"stage":"login_retry", "account":number, "attempt":attempt}),
                         )?;
-                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        tokio::time::sleep(Duration::from_secs(2_u64.pow(attempt as u32))).await;
                     } else {
                         bail!("Account {} login: {}", number, error);
                     }
@@ -278,7 +278,7 @@ async fn execute_remote(job: Job, folder: &Path, completed: &mut usize) -> Resul
                 login(&account.email, &job.anisette_server),
             )
             .await
-            .context("Apple login timed out")?
+            .unwrap_or_else(|_| Err(report!("Apple login timed out")))
             {
                 Ok(value) => {
                     signed_in = Some(value);
@@ -286,9 +286,12 @@ async fn execute_remote(job: Job, folder: &Path, completed: &mut usize) -> Resul
                 }
                 Err(error) => {
                     let error = error.to_string();
-                    if error.to_string().contains("-22406") && attempt < 3 {
-                        status(folder, json!({"stage":"login_retry", "account":number}))?;
-                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    if retryable_login_error(&error) && attempt < 3 {
+                        status(
+                            folder,
+                            json!({"stage":"login_retry", "account":number, "attempt":attempt}),
+                        )?;
+                        tokio::time::sleep(Duration::from_secs(2_u64.pow(attempt as u32))).await;
                     } else {
                         bail!("Account {} login: {}", number, error);
                     }
@@ -438,6 +441,52 @@ pub async fn run(path: &Path) -> i32 {
                 json!({"ok":false,"completed_accounts":completed,"error":format!("{error}")}),
             );
             1
+        }
+    }
+}
+
+// Retry authentication only; signing and installation must never be replayed here.
+fn retryable_login_error(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    [
+        "-22406",
+        "error sending request",
+        "apple login timed out",
+        "connection reset",
+        "unexpected eof",
+    ]
+    .iter()
+    .any(|pattern| message.contains(pattern))
+}
+
+#[cfg(test)]
+mod login_retry_tests {
+    use super::retryable_login_error;
+
+    #[test]
+    fn retries_transient_authentication_transport_failures() {
+        for message in [
+            "error sending request for url (https://gsa.apple.com/grandslam/GsService2)",
+            "Apple login timed out",
+            "Connection reset by peer",
+            "unexpected EOF",
+            "Apple authentication error -22406",
+        ] {
+            assert!(retryable_login_error(message), "{message}");
+        }
+    }
+
+    #[test]
+    fn does_not_retry_credentials_verification_or_provisioning_errors() {
+        for message in [
+            "Incorrect Apple ID or password",
+            "Account locked -20209",
+            "User action required: complete Apple verification",
+            "No matching entry found in credential store",
+            "Maximum number of certificates reached",
+            "ApplicationVerificationFailed",
+        ] {
+            assert!(!retryable_login_error(message), "{message}");
         }
     }
 }

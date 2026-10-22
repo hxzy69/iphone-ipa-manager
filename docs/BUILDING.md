@@ -81,5 +81,5 @@ The native Cargo manifest patches `apple-codesign-quick` to the accompanying
 `tools/build.ps1` command (without `-SkipNative`) to compile and relink it into the
 native helper and package the application. The exact application sources,
 `Cargo.lock`, GPL transport sources, and build scripts accompany the Windows
-release in `source/iPhoneIPAManager-0.1.0-source.zip`. No signature or application
+release in `source/iPhoneIPAManager-0.1.1-source.zip`. No signature or application
 check prevents using a modified, rebuilt helper.

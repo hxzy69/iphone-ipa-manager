@@ -6,7 +6,7 @@ import zipfile
 
 from audit_release import ROOT, audit, source_files
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 
 def archive(destination, root, paths):

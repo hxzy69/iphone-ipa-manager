@@ -4,6 +4,16 @@ A Windows desktop app for managing Apple accounts, installing assigned IPA files
 and renewing provisioning profiles. An optional private Discord bot exposes the
 same saved assignments and job status.
 
+## Download
+
+[**Download for Windows 11 (x64) — 0.1.1 preview**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.1.1-preview/iPhoneIPAManager-0.1.1-windows-x64.zip)
+
+[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.1.1-preview)
+· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.1.1-preview/iPhoneIPAManager-0.1.1-source.zip)
+· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.1.1-preview/SHA256SUMS.txt)
+
+Extract the ZIP and run `iPhoneIPAManager.exe`. Python is not required.
+
 **Release status: 0.1.1 preview.** The existing installation engine has device
 testing behind it. This public distribution introduces clean onboarding and a
 smaller native helper; its validation and remaining device checks are recorded

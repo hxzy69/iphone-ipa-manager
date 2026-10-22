@@ -69,7 +69,7 @@ class AssignmentTests(unittest.TestCase):
                 self.assertTrue(needs_install(reloaded, 2, source.stem))
                 for transport in ("USB", "Network", "Remote"):
                     request = make_job(reloaded, transport, accounts=[1])
-                    self.assertEqual(request["accounts"][0]["ipa"], str(source))
+                    self.assertTrue(Path(request["accounts"][0]["ipa"]).samefile(source))
 
     def test_only_verified_full_install_clears_pending_assignment(self):
         with tempfile.TemporaryDirectory() as directory:

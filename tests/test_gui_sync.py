@@ -102,6 +102,6 @@ class GuiSyncTests(unittest.TestCase):
                 self.assertTrue(app.save())
             saved = save.call_args.args[0]
             self.assertEqual(saved["automation"]["install_timeout"], 1200)
-            self.assertEqual(saved["automation"]["ipa_directory"], directory)
+            self.assertTrue(Path(saved["automation"]["ipa_directory"]).samefile(directory))
             self.assertEqual(saved["automation"]["pending_ipa_installs"], {"2": "KeepMe"})
             self.assertEqual(saved["device"], {"serial": "latest-device"})

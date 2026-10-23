@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — workflow controls (candidate)
+## 0.2.0 — workflow controls (preview)
 
 - Add a shared desktop/Discord dashboard for account outcomes, observed profile expiry, renewal status, last route and measured upload speed.
 - Persist account-level verified completion receipts and provide explicit retries that skip matching completed accounts. Recover the renewal schedule conservatively after partial retries.

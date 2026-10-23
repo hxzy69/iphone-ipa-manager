@@ -72,7 +72,7 @@ Validated on 2026-10-23 using the clean public build environment:
   installations, running bot replacement or tunnel restart were performed for
   these UI and reporting changes. The acceptance limits above remain open.
 
-## 0.2.0 workflow candidate
+## 0.2.0 workflow preview
 
 Validated on 2026-10-23 in the clean public build environment:
 
@@ -98,4 +98,6 @@ The native signing/installation backend remains unchanged. No real-device
 installation, live migration of the user's startup tasks, physical PC reboot,
 roaming tunnel restart or seven-day expiry acceptance was performed. Those
 checks remain required before making stable-release reliability claims. The
-published download remains 0.1.2 while this candidate receives independent CI.
+0.2.0 preview is published with matching source and checksums. Both independent
+GitHub Windows validation runs passed for release commit
+`64a00d1f3b08f01ab95717d3be8f0b9a9e84a740`.

@@ -6,15 +6,15 @@ same saved assignments and job status.
 
 ## Download
 
-[**Download for Windows 11 (x64) — 0.1.2 preview**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.1.2-preview/iPhoneIPAManager-0.1.2-windows-x64.zip)
+[**Download for Windows 11 (x64) — 0.2.0 preview**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.2.0-preview/iPhoneIPAManager-0.2.0-windows-x64.zip)
 
-[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.1.2-preview)
-· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.1.2-preview/iPhoneIPAManager-0.1.2-source.zip)
-· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.1.2-preview/SHA256SUMS.txt)
+[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.2.0-preview)
+· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.2.0-preview/iPhoneIPAManager-0.2.0-source.zip)
+· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.2.0-preview/SHA256SUMS.txt)
 
 Extract the ZIP and run `iPhoneIPAManager.exe`. Python is not required.
 
-**Release status: 0.1.2 preview.** The existing installation engine has device
+**Release status: 0.2.0 preview.** The existing installation engine has device
 testing behind it. This public distribution introduces clean onboarding and a
 smaller native helper; its validation and remaining device checks are recorded
 in [release validation](docs/VALIDATION.md). Experimental remote renewal is not
@@ -42,10 +42,10 @@ without losing settings and for restarting background components safely.
 
 ## What it does
 
-The source tree now includes the 0.2.0 candidate's [dashboard, queue, partial-run
-recovery and configuration backup](docs/DASHBOARD_AND_QUEUE.md), plus guided
-side-by-side updates. The download above remains the published 0.1.2 preview until
-the new candidate is released.
+The 0.2.0 release includes a shared [dashboard, queue, partial-run recovery
+and configuration backup](docs/DASHBOARD_AND_QUEUE.md), plus verified
+side-by-side updates. Upgrading from 0.1.2 or earlier requires a manual first
+upgrade; see the [updating guide](docs/UPDATING.md).
 
 - Keeps an ordered list of up to 25 accounts, each assigned one IPA. Apple limits
   on apps, certificates, devices and App IDs still apply.

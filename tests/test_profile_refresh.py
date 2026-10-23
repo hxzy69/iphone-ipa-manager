@@ -136,7 +136,7 @@ class ProfileRefreshTests(unittest.TestCase):
                     ),
                     patch(
                         "iphone_detector.background.make_job",
-                        return_value={"timeout": 5, "accounts": []},
+                        return_value={"timeout": 5, "accounts": [{"account": 2, "ipa": "App.ipa"}]},
                     ),
                     patch("iphone_detector.background.run_background", side_effect=native),
                     patch.object(remote, "compression_level", return_value=9),

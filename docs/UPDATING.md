@@ -1,5 +1,38 @@
 # Updating the Windows app
 
+## Guided updates in 0.2.0 and later
+
+The candidate adds **Download and verify update** and **Activate prepared update**
+to About and updates. Discord `/update` offers download, activation and rollback
+actions, with an explicit restart confirmation. `/updates` remains a read-only check.
+Existing 0.1.2 installations need one manual upgrade before these controls exist.
+
+Download checks the official repository, retrieves checksums and matching
+Windows/source ZIPs, verifies hashes and the executable receipt, bounds archive
+expansion, rejects unsafe Windows paths, and extracts into a unique local version
+folder. It does not stop running jobs. The publishing account remains the trust
+root; these checksums are not a separate signing authority.
+
+Activation requires idle installations and no pending queue. It runs the prepared
+EXE's self-test locally before stopping the old components. Then it closes the old
+GUI, stops the owned bot/tunnel, migrates existing ordinary-user task actions,
+and starts the new build. Existing task arguments, triggers (including renewal
+repetition), settings and permissions are preserved. The application data
+directory stays the same. No administrator prompt or in-place EXE overwrite is used.
+
+The previous executable remains on disk and its hash is recorded. Use the rollback
+button or `/update` rollback to activate it again. Startup migration failures
+attempt to retarget tasks back and relaunch the previous version. If Windows
+prevents that repair, the updater marks the state for local review: open the
+previous release and re-enable its startup controls. Future configuration-format
+changes may require a private settings backup as well as the previous executable.
+
+A stopped tunnel may require home Wi-Fi to reconnect. Prefer updating at home.
+Real reboot, live startup migration and roaming acceptance remain open; the
+candidate's failure handling is covered by isolated process/COM tests.
+
+## Manual updates and release checks
+
 Open **About and updates → Check for updates**, or use `/updates` in your private
 Discord channel. The installed version appears in the desktop title and `/status`.
 GitHub is contacted only when you request a check. Checks use the public API,

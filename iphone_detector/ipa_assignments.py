@@ -19,20 +19,34 @@ def acknowledge_installs(job, result):
     from iphone_detector.config import load_config, save_config
     from iphone_detector.settings import get_workflow
 
-    if not result.get("ok") or result.get("prepared_only"):
+    if result.get("prepared_only"):
         return
     request_path = Path(job) / "backend-job.json"
     if not request_path.exists():
         return
     request = json.loads(request_path.read_text(encoding="utf-8"))
     entries = request.get("accounts", [])
-    if not entries or result.get("completed_accounts") != len(entries):
+    if not entries:
         return
-    installed = (
-        result.get("installed_accounts", [])
-        if request.get("profile_refresh")
-        else [entry.get("account", index + 1) for index, entry in enumerate(entries)]
-    )
+    if not result.get("ok") or result.get("completed_accounts") != len(entries):
+        from iphone_detector.operations import matching
+        from iphone_detector.job_history import read
+
+        installed = [
+            entry["account"]
+            for entry in entries
+            if matching(read(Path(job) / f"completed-{entry.get('account')}.json"), request, entry)
+            and read(Path(job) / f"completed-{entry.get('account')}.json").get("operation")
+            == "install"
+        ]
+        if not installed:
+            return
+    else:
+        installed = (
+            result.get("installed_accounts", [])
+            if request.get("profile_refresh")
+            else [entry.get("account", index + 1) for index, entry in enumerate(entries)]
+        )
     selection_path = Path(job) / "selection.json"
     selection = (
         json.loads(selection_path.read_text(encoding="utf-8")) if selection_path.exists() else {}

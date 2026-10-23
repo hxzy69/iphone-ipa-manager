@@ -326,7 +326,10 @@ class RemoteTunnelTests(unittest.TestCase):
             patch(
                 "iphone_detector.config.load_config", return_value={"device": {"serial": "phone"}}
             ),
-            patch("iphone_detector.background.make_job", return_value={"timeout": 5}) as make,
+            patch(
+                "iphone_detector.background.make_job",
+                return_value={"timeout": 5, "accounts": [{"account": 2, "ipa": "App.ipa"}]},
+            ) as make,
             patch("iphone_detector.background.run_background", side_effect=native),
             patch.object(remote, "compression_level", return_value=9),
             patch.object(remote, "upload_streams", return_value=1),

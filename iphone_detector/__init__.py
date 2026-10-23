@@ -3,6 +3,6 @@
 import sys
 from pathlib import Path
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vendor/python"))

@@ -170,6 +170,8 @@ def transfer_progress(path, timing, stage):
                 "account": timing.get("account"),
                 "uploaded_bytes": timing["uploaded_bytes"],
                 "archive_bytes": timing["archive_bytes"],
+                "upload_started_at": timing.get("upload_started_at"),
+                "updated_at": time.time(),
             },
         )
     except OSError:
@@ -357,6 +359,11 @@ async def execute_job(job, rsd):
                         )
                     await asyncio.sleep(0.2)
                 await transfer
+                from iphone_detector.operations import record
+
+                record(
+                    job, request, archive, "install" if archive in installed_accounts else "refresh"
+                )
             finally:
                 if not transfer.done():
                     transfer.cancel()
@@ -395,6 +402,7 @@ async def execute_job(job, rsd):
         for path in job.glob("remote-*.ipa"):
             path.unlink(missing_ok=True)
         if outcome is not None:
+            outcome["verified_accounts"] = numbers[:completed] if "numbers" in locals() else []
             if not outcome.get("ok"):
                 outcome["completed_accounts"] = completed
             atomic(job / "remote-result.json", outcome)

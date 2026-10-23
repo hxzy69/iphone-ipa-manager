@@ -76,6 +76,18 @@
   <p>Settings live in <code>%LOCALAPPDATA%\iPhoneIPAManagerCommunity</code>. Keep a private backup.
     The release contains no saved accounts, token, device pairing or IPA files.</p>
   <h2>Check for updates</h2>
+  <p>The candidate's <strong>Dashboard and queue</strong> shows account outcomes, observed profile expiry,
+    renewal status and the last selected route. Queue network jobs, cancel waiting requests or explicitly
+    retry unfinished accounts. Discord exposes the same controls through <code>/dashboard</code>,
+    <code>/queue</code> and <code>/retry</code>. Failed/interrupted requests pause the queue for review.</p>
+  <p>Configuration export/restore is available in the dashboard and <code>/backup</code>.
+    Backups include account emails and IPA names, but no passwords, tokens, pairing records or local paths.
+    They are not encrypted; keep them private. Restore previews the account count and requires confirmation.</p>
+  <p>In the candidate, <strong>Download and verify update</strong> prepares a separate version folder;
+    <strong>Activate prepared update</strong> runs its local self-test, requires idle work, restarts components,
+    and migrates existing startup actions. The previous executable is retained for rollback.
+    Discord <code>/update</code> offers the same preparation and confirmation flow. A restarted tunnel may
+    need home Wi-Fi. Version 0.1.2 needs a manual upgrade before these controls are available.</p>
   <p><strong>About and updates → Check for updates</strong> and Discord <code>/updates</code> check
     the official GitHub release. Checks are manual and do not interrupt running jobs. Your version
     also appears in the desktop title and Discord <code>/status</code>.</p>

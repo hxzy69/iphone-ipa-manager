@@ -46,3 +46,11 @@ health flags. It excludes account identities, filenames, device IDs, network
 addresses, paths, credentials and raw logs. The desktop can save the same report
 from **About and updates → Save support report**.
 
+The 0.2.0 candidate adds `/dashboard`, `/queue`, `/retry`, `/backup`, and `/update`.
+Queue actions and account/request selection provide choices or autocomplete;
+retry offers recent-run autocomplete. Backup restores and update activation use
+private confirmation buttons. Configuration exports contain account emails and
+IPA names but no credentials or pairing; **Attach Files** permission is needed
+only for Discord backup downloads. See [dashboard and queue](DASHBOARD_AND_QUEUE.md)
+and [guided updates](UPDATING.md) for the recovery and restart semantics.
+

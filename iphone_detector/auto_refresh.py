@@ -90,6 +90,25 @@ def record_success(job, result):
         except OSError:
             at = time.time()
         atomic(SUCCESS, {"at": at, "job": str(job)})
+    elif result.get("ok") is True and not result.get("prepared_only"):
+        from iphone_detector.config import load_config
+        from iphone_detector.operations import account_status
+        from iphone_detector.settings import get_workflow
+        from iphone_detector.storage import write_json
+
+        config = load_config() or {}
+        outcomes = account_status(DATA_ROOT, config)
+        if len(outcomes) != len(get_workflow(config)) or not outcomes:
+            return
+        _, success, state = schedule_snapshot()
+        threshold = max(
+            success.get("at", 0), state.get("started_at", 0) if state.get("pending_job") else 0
+        )
+        earliest = min(receipt["at"] for receipt in outcomes.values())
+        if threshold < earliest <= time.time() < earliest + INTERVAL:
+            write_json(
+                SUCCESS, {"at": earliest, "job": str(job), "combined_verified_accounts": True}
+            )
 
 
 def recover_completed(state):

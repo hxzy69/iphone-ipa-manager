@@ -42,6 +42,11 @@ without losing settings and for restarting background components safely.
 
 ## What it does
 
+The source tree now includes the 0.2.0 candidate's [dashboard, queue, partial-run
+recovery and configuration backup](docs/DASHBOARD_AND_QUEUE.md), plus guided
+side-by-side updates. The download above remains the published 0.1.2 preview until
+the new candidate is released.
+
 - Keeps an ordered list of up to 25 accounts, each assigned one IPA. Apple limits
   on apps, certificates, devices and App IDs still apply.
 - Accepts version changes by choosing a new file; no executable rebuild is needed.

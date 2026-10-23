@@ -100,7 +100,9 @@ def worker(mode, job, parent_pid=None, accounts=None):
 
     def result(data):
         from iphone_detector.storage import write_json
+        from iphone_detector.operations import collect_native
 
+        collect_native(job)
         write_json(job / "result.json", data)
         try:
             from iphone_detector.ipa_assignments import acknowledge_installs
@@ -333,6 +335,8 @@ def main():
         "--discord", action="store_true", help="Run the configured private Discord bot"
     )
     parser.add_argument("--remote-daemon", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--queue-runner", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--activate-update", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--auto-refresh", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--enable-auto-refresh", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
@@ -376,6 +380,15 @@ def main():
         from iphone_detector.self_test import run
 
         return run(args.report_file.resolve())
+    if args.queue_runner:
+        from iphone_detector.job_queue import run
+
+        run()
+        return 0
+    if args.activate_update:
+        from iphone_detector.guided_update import activate
+
+        return activate(args.activate_update, args.parent_pid)
     if args.enable_auto_refresh:
         from iphone_detector.auto_refresh import configure
 

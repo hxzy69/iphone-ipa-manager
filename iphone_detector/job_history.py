@@ -14,7 +14,7 @@ def read(path):
 def recent_jobs(root, limit=5):
     candidates = []
     for folder, prefixes in (
-        (root / "automation-runs", ("discord-", "automatic-", "gui-")),
+        (root / "automation-runs", ("discord-", "automatic-", "gui-", "queue-")),
         (root / "gui-jobs", None),
     ):
         if not folder.is_dir():

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 — workflow controls (candidate)
+
+- Add a shared desktop/Discord dashboard for account outcomes, observed profile expiry, renewal status, last route and measured upload speed.
+- Persist account-level verified completion receipts and provide explicit retries that skip matching completed accounts. Recover the renewal schedule conservatively after partial retries.
+- Add a durable FIFO network queue with assignment snapshots, account/request autocomplete, cancellation, sign-in startup and fail-closed interruption recovery.
+- Add validated configuration export/restore in the GUI and Discord, excluding credentials, pairing and local paths; keep a local pre-restore assignment backup.
+- Prepare verified updates in separate version folders; require local runtime checks and idle work before activation, preserve startup triggers, and retain the previous executable for rollback.
+- Extend device-free acceptance coverage for fresh profiles, process startup, crash recovery, update failure, backup privacy and GUI controls. Physical device, real reboot and long-term expiry acceptance remain separate requirements.
+
 ## 0.1.2 — update visibility
 
 - Show the running version in the desktop title, About window, Discord `/status`, and packaged self-test receipts.

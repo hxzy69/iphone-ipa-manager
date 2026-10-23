@@ -71,3 +71,31 @@ Validated on 2026-10-23 using the clean public build environment:
 - The native signing and installation backend is unchanged from 0.1.1. No device
   installations, running bot replacement or tunnel restart were performed for
   these UI and reporting changes. The acceptance limits above remain open.
+
+## 0.2.0 workflow candidate
+
+Validated on 2026-10-23 in the clean public build environment:
+
+- 268 device-free tests passed. Coverage includes queue FIFO order, exclusion
+  with active work, recovery after a worker exits, changed-file rejection,
+  interruption pausing, partial-account retries, conservative schedule recovery,
+  backup privacy/restore validation, connection metrics, fresh-profile CLI startup,
+  actual Tk controls and startup migration/rollback faults.
+- All 17 checks passed in the frozen EXE. A bytecode comparison verified all
+  51 bundled application modules against the saved source, with filenames
+  normalized solely for comparison. Companion integrity checks passed.
+- The updater downloaded the real public 0.1.2 release into an isolated folder,
+  verified Windows/source archives and checksums, and successfully ran that EXE's
+  15 self-tests. It did not activate that download or change startup tasks.
+- A packaged handover test used two temporary copies and a unique empty profile.
+  The old GUI exited, the replacement stayed running, rollback reopened the
+  previous GUI, and the rollback receipt was retained. Installed community task
+  definitions were hashed before and after and were unchanged.
+- Task-action migration with matching ownership/profile, trigger preservation,
+  normal permissions and failure rollback is covered with isolated COM fixtures.
+
+The native signing/installation backend remains unchanged. No real-device
+installation, live migration of the user's startup tasks, physical PC reboot,
+roaming tunnel restart or seven-day expiry acceptance was performed. Those
+checks remain required before making stable-release reliability claims. The
+published download remains 0.1.2 while this candidate receives independent CI.

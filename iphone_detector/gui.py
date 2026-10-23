@@ -58,6 +58,12 @@ class App:
         self.external_active = False
         self._refresh_device()
         self.root.after(150, self.poll)
+        try:
+            from iphone_detector.job_queue import ensure_started
+
+            ensure_started()
+        except OSError, ValueError:
+            self.status.set("Queue needs attention; open Dashboard and queue.")
 
     def _styles(self):
         style = ttk.Style(self.root)
@@ -90,6 +96,11 @@ class App:
         style.map("Accent.TButton", background=[("active", "#78e8d2"), ("disabled", "#263d40")])
         style.configure("Stop.TButton", background="#733e43", foreground="#fff1f1")
         style.configure("TCheckbutton", background=BACKGROUND, foreground=MUTED)
+        style.configure(
+            "Treeview", background=PANEL, fieldbackground=PANEL, foreground=TEXT, rowheight=25
+        )
+        style.configure("Treeview.Heading", background="#243541", foreground=TEXT)
+        style.map("Treeview", background=[("selected", "#2c414f")], foreground=[("selected", TEXT)])
         style.map("TCheckbutton", background=[("active", BACKGROUND)])
 
     def _entry(self, parent, variable, **kwargs):
@@ -136,6 +147,9 @@ class App:
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(3, 17))
         ttk.Button(outer, text="About and updates", command=self.open_updates).pack(
+            anchor="w", pady=(0, 12)
+        )
+        ttk.Button(outer, text="Dashboard and queue", command=self.open_dashboard).pack(
             anchor="w", pady=(0, 12)
         )
 
@@ -724,6 +738,18 @@ class App:
                 self.append(self.decoder.decode(data))
 
     def poll(self):
+        from iphone_detector.guided_update import STATE
+        from iphone_detector.job_history import read
+
+        update = read(STATE)
+        if (
+            update.get("phase") == "close_gui"
+            and type(update.get("at")) in (int, float)
+            and time.time() - update.get("at", 0) < 120
+            and self.process is None
+        ):
+            self.root.destroy()
+            return
         self.sync_live()
         if self.process is not None:
             self._read_log()
@@ -778,6 +804,15 @@ class App:
                 self.stop_started = None
         self.root.after(150, self.poll)
 
+    def open_dashboard(self):
+        from iphone_detector.management_dialog import ManagementDialog
+
+        previous = getattr(self, "management", None)
+        if previous is not None and previous.window.winfo_exists():
+            previous.window.lift()
+        else:
+            self.management = ManagementDialog(self)
+
     def open_updates(self):
         from iphone_detector.updates import UpdateError, check_updates
 
@@ -799,15 +834,22 @@ class App:
             text="Open source · GPL-3.0-or-later\nBuilt on iloader; remote refresh research informed by JAS.",
             wraplength=520,
         ).pack(anchor="w", pady=12)
-        status = tk.StringVar(value="Check the official GitHub repository for a newer release.")
+        from iphone_detector.guided_update import STATE
+        from iphone_detector.job_history import read
+
+        previous_update = read(STATE)
+        status = tk.StringVar(
+            value=previous_update.get(
+                "message", "Check the official GitHub repository for a newer release."
+            )
+        )
         ttk.Label(frame, textvariable=status, wraplength=520).pack(anchor="w", pady=8)
         ttk.Label(
             frame,
             text="Checks contact GitHub only when requested. No account settings or logs are sent.\n\n"
-            "Before replacing the app, let active jobs finish. In Discord setup, disable automatic renewal "
-            "and the remote tunnel, then stop the bot. Extract the new release into a permanent folder. "
-            "Re-enable startup and background features from the new app. Saved settings stay in place. "
-            "A new tunnel may need home Wi-Fi.",
+            "Download verifies the release before activation. Activation requires idle workers and no waiting queue. "
+            "It closes the old GUI, restarts background components and migrates existing startup tasks. "
+            "Saved settings and the previous executable stay in place. A restarted tunnel may need home Wi-Fi.",
             style="Muted.TLabel",
             wraplength=520,
         ).pack(anchor="w", pady=12)
@@ -839,6 +881,8 @@ class App:
                 release_button.configure(
                     state="normal", command=lambda: webbrowser.open(release.url)
                 )
+                if release.available and FROZEN:
+                    prepare_button.configure(state="normal", command=lambda: prepare(release))
 
         def start_check():
             check.configure(state="disabled")
@@ -849,6 +893,83 @@ class App:
 
         check = ttk.Button(frame, text="Check for updates", command=start_check)
         check.pack(anchor="w", pady=8)
+        prepare_button = ttk.Button(frame, text="Download and verify update", state="disabled")
+        prepare_button.pack(anchor="w", pady=8)
+        activate_button = ttk.Button(frame, text="Activate prepared update", state="disabled")
+        activate_button.pack(anchor="w", pady=8)
+        prepared = queue.Queue()
+
+        def prepare(release):
+            prepare_button.configure(state="disabled")
+            status.set("Downloading and verifying the Windows release and matching source…")
+
+            def run():
+                from iphone_detector.guided_update import prepare
+
+                try:
+                    prepared.put((prepare(release), None))
+                except Exception:
+                    prepared.put(
+                        (
+                            None,
+                            "Download or verification failed. No running processes were changed.",
+                        )
+                    )
+
+            threading.Thread(target=run, daemon=True).start()
+            self.root.after(100, receive_prepared)
+
+        def receive_prepared():
+            if not dialog.winfo_exists():
+                return
+            try:
+                plan, error = prepared.get_nowait()
+            except queue.Empty:
+                self.root.after(100, receive_prepared)
+                return
+            prepare_button.configure(state="normal")
+            status.set(
+                error
+                or "Release verified. Activation closes this GUI and restarts background components. The tunnel may need home Wi-Fi."
+            )
+            if plan:
+                activate_button.configure(state="normal", command=lambda: activate(plan))
+
+        def activate(plan):
+            from iphone_detector.guided_update import start
+
+            try:
+                start(plan)
+                status.set("Waiting for active-work checks and background shutdown…")
+                activate_button.configure(state="disabled")
+                self.root.after(300, activation_status)
+            except (OSError, ValueError) as exc:
+                status.set(str(exc))
+
+        def activation_status():
+            if not dialog.winfo_exists():
+                return
+            state = read(STATE)
+            if state.get("phase") in ("failed", "repair"):
+                status.set(
+                    state.get(
+                        "message",
+                        "Activation needs attention; the previous executable is preserved.",
+                    )
+                )
+                activate_button.configure(state="normal")
+                return
+            if state.get("phase") == "complete":
+                status.set("Update activated.")
+                return
+            self.root.after(300, activation_status)
+
+        from iphone_detector.guided_update import PREVIOUS
+
+        if PREVIOUS.is_file() and FROZEN:
+            ttk.Button(
+                frame, text="Roll back to previous executable", command=lambda: activate(PREVIOUS)
+            ).pack(anchor="w", pady=8)
         ttk.Button(frame, text="Save support report", command=self.export_support_report).pack(
             anchor="w", pady=8
         )

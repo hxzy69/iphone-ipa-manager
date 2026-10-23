@@ -50,7 +50,12 @@ def register(tree, guild, allow, discord, can_suggest=None):
             "/panel — buttons for common actions.\n"
             "/status — active job, connection and next renewal.\n"
             "/updates — running version and official release downloads.\n"
+            "/update — prepare a verified update, activate or roll back.\n"
             "/diagnostics — support health flags without accounts, paths or credentials.\n"
+            "/dashboard — verified account outcomes, expiry and connection details.\n"
+            "/queue — queue jobs, cancel waiting requests or dismiss failures.\n"
+            "/retry — full-install unfinished accounts from a selected run.\n"
+            "/backup — export preferences/assignments or preview a restore.\n"
             "/history — recent verified outcomes.\n"
             "/stop — request safe cancellation, including GUI and scheduled jobs.\n"
             "/check — read-only setup checks.\n"
@@ -270,6 +275,8 @@ def register(tree, guild, allow, discord, can_suggest=None):
             super().__init__(timeout=300)
             for name, label, args in (
                 ("status", "Status", ()),
+                ("dashboard", "Dashboard", ()),
+                ("queue", "Queue", ()),
                 ("accounts", "Accounts", ()),
                 ("files", "IPA files", ()),
                 ("history", "History", ()),

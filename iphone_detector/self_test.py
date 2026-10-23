@@ -95,6 +95,50 @@ def run(report_path):
 
         check("concurrent atomic storage", storage)
 
+        def backup_schema():
+            from iphone_detector.config_backup import validate
+            from iphone_detector import dashboard, job_queue, management_dialog, discord_operations
+
+            value = {"schema_version": 1, "preferences": {}, "accounts": []}
+            validate(value)
+            if (
+                dashboard.date(None) != "Unknown"
+                or not job_queue.STATES
+                or not management_dialog.ManagementDialog
+                or not discord_operations.register
+            ):
+                raise RuntimeError("Management services unavailable")
+            try:
+                validate(dict(value, token="not-a-token"))
+            except ValueError:
+                return
+            raise RuntimeError("Backup accepted unsupported credential fields")
+
+        check("backup schema and management services", backup_schema)
+
+        def staged_identity():
+            from iphone_detector.guided_update import validate_plan
+
+            executable = folder / "fixture.exe"
+            executable.write_bytes(b"MZfixture")
+            plan = folder / "ready.json"
+            write_json(
+                plan,
+                {
+                    "executable": str(executable),
+                    "sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
+                },
+            )
+            validate_plan(plan)
+            executable.write_bytes(b"changed")
+            try:
+                validate_plan(plan)
+            except ValueError:
+                return
+            raise RuntimeError("Staged executable identity change was not rejected")
+
+        check("prepared update executable identity", staged_identity)
+
         def outbox():
             from iphone_detector.discord_outbox import enqueue, pending
 

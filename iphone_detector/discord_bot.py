@@ -836,6 +836,15 @@ def run():
                 lambda item: authorized(settings, item.user.id, item.guild_id, item.channel_id),
             )
             from iphone_detector.discord_login import register as register_login
+            from iphone_detector.discord_operations import register as register_operations
+
+            register_operations(
+                self.tree,
+                guild,
+                allow,
+                lambda item: authorized(settings, item.user.id, item.guild_id, item.channel_id),
+                discord,
+            )
 
             self.account_login = register_login(
                 self.tree,
@@ -857,6 +866,9 @@ def run():
                     if time.monotonic() - last_remote_check > 30:
                         try:
                             await asyncio.to_thread(remote_tunnel.ensure_started)
+                            from iphone_detector.job_queue import ensure_started
+
+                            await asyncio.to_thread(ensure_started)
                         except Exception:
                             LOG.exception("Tunnel maintenance failed; will check again.")
                         last_remote_check = time.monotonic()

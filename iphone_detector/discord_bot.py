@@ -11,6 +11,7 @@ import sys
 import time
 
 from iphone_detector.paths import DATA_ROOT, ASSET_ROOT, FROZEN
+from iphone_detector import __version__
 
 SETTINGS = DATA_ROOT / "discord.json"
 LOG = logging.getLogger("iphone-detector.discord")
@@ -464,6 +465,55 @@ def run():
                     )
 
             @self.tree.command(
+                name="diagnostics",
+                description="Show a support report without accounts or credentials",
+                guild=guild,
+            )
+            async def diagnostics(interaction: discord.Interaction):
+                if not await allow(interaction):
+                    return
+                await interaction.response.defer(ephemeral=True)
+                from iphone_detector.diagnostics import report
+
+                snapshot = await asyncio.to_thread(report)
+                await interaction.followup.send(
+                    "Support snapshot (no accounts, paths, credentials or raw logs):\n```json\n"
+                    + json.dumps(snapshot, indent=2)
+                    + "\n```",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+
+            @self.tree.command(
+                name="updates",
+                description="Check the installed bot version and official releases",
+                guild=guild,
+            )
+            async def updates(interaction: discord.Interaction):
+                if not await allow(interaction):
+                    return
+                await interaction.response.defer(ephemeral=True)
+                from iphone_detector.updates import UpdateError, check_updates
+
+                try:
+                    release = await asyncio.to_thread(check_updates)
+                    message = (
+                        release.summary()
+                        + "\n"
+                        + release.url
+                        + "\nUpdates require replacing the Windows app. Let active jobs finish first. "
+                        "Restarting the remote tunnel may require home Wi-Fi."
+                    )
+                except UpdateError as exc:
+                    message = f"Running version {__version__}. {exc}"
+                except Exception:
+                    LOG.exception("Discord update check failed")
+                    message = f"Running version {__version__}. Could not check for updates. Try again later."
+                await interaction.followup.send(
+                    message, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
+                )
+
+            @self.tree.command(
                 name="status", description="Show the current installation status", guild=guild
             )
             async def status(interaction: discord.Interaction):
@@ -481,7 +531,9 @@ def run():
                             active[0]["mode"],
                             ", ".join(map(str, active[0]["accounts"])),
                         )
-                    await interaction.response.send_message(state + detail, ephemeral=True)
+                    await interaction.response.send_message(
+                        f"iPhone IPA Manager {__version__}\n" + state + detail, ephemeral=True
+                    )
 
             @self.tree.command(
                 name="accounts",

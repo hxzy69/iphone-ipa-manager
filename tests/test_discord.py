@@ -328,6 +328,8 @@ class DiscordTests(unittest.TestCase):
                     "sideload",
                     "refresh",
                     "status",
+                    "updates",
+                    "diagnostics",
                     "stop",
                     "inbox",
                     "assign",
@@ -351,6 +353,26 @@ class DiscordTests(unittest.TestCase):
                 else:
                     await item.callback(interaction)
                 interaction.response.send_message.assert_awaited_once()
+            from iphone_detector.updates import Release, REPOSITORY, UpdateError
+
+            updates_command = next(item for item in commands if item.name == "updates")
+            interaction = Mock(user=Mock(id=1), guild_id=2, channel_id=3)
+            interaction.response.defer = AsyncMock()
+            interaction.followup.send = AsyncMock()
+            with patch(
+                "iphone_detector.updates.check_updates",
+                return_value=Release("99.0.0", REPOSITORY + "/releases/tag/v99.0.0"),
+            ):
+                await updates_command.callback(interaction)
+            interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+            self.assertIn("99.0.0", interaction.followup.send.call_args.args[0])
+            self.assertTrue(interaction.followup.send.call_args.kwargs["ephemeral"])
+            interaction.followup.send.reset_mock()
+            with patch(
+                "iphone_detector.updates.check_updates", side_effect=UpdateError("Try again later.")
+            ):
+                await updates_command.callback(interaction)
+            self.assertIn("Try again later", interaction.followup.send.call_args.args[0])
             await client.close()
 
         with (

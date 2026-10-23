@@ -55,3 +55,19 @@ The corresponding private development build completed a three-account profile
 refresh on home Wi-Fi, with profile readback verified for each account and zero
 full installations. This verifies the deployed private path; the public build's
 remaining clean-machine and long-term acceptance requirements above still apply.
+
+## 0.1.2 update and support controls
+
+Validated on 2026-10-23 using the clean public build environment:
+
+- 233 device-free tests passed, including actual Tk event-loop responsiveness,
+  Discord command authorization, official release-link validation, numeric version
+  comparison, caching, rate limits and offline failures.
+- Support snapshot tests inject private values into settings and exceptions and
+  verify they are absent from the report. Corrupt sections do not hide other results.
+- A live read-only GitHub release check returned the current public release.
+- All 15 packaged self-tests passed; the receipt identifies version 0.1.2 and the
+  exact EXE hash. Companion integrity and source allowlist checks passed.
+- The native signing and installation backend is unchanged from 0.1.1. No device
+  installations, running bot replacement or tunnel restart were performed for
+  these UI and reporting changes. The acceptance limits above remain open.

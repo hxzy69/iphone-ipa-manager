@@ -26,7 +26,7 @@ def main():
         raise ValueError("Source audit failed; inspect tools/audit_release.py output.")
     dist = ROOT / "dist"
     receipt = json.loads((dist / "self-test.json").read_text(encoding="utf-8"))
-    verify_receipt(receipt, (dist / "iPhoneIPAManager.exe").read_bytes())
+    verify_receipt(receipt, (dist / "iPhoneIPAManager.exe").read_bytes(), expected_version=VERSION)
     files = [
         dist / name
         for name in (

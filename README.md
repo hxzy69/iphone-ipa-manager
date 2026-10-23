@@ -36,6 +36,10 @@ a guarantee that an app will remain usable indefinitely.
 Start with USB. Set up local Wi-Fi, remote access, Discord, and automatic renewal
 after the first installation works. The app includes an offline **Setup guide**.
 
+Desktop **About and updates** and Discord `/updates` show the running version and
+check official releases. See [updating the app](docs/UPDATING.md) for upgrading
+without losing settings and for restarting background components safely.
+
 ## What it does
 
 - Keeps an ordered list of up to 25 accounts, each assigned one IPA. Apple limits

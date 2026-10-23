@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 import zipfile
 
 
-def verify_receipt(receipt, executable):
+def verify_receipt(receipt, executable, expected_version=None):
     checks = receipt.get("checks")
     if (
         receipt.get("ok") is not True
@@ -20,6 +20,8 @@ def verify_receipt(receipt, executable):
         raise ValueError("A passing packaged self-test with successful checks is required.")
     if receipt.get("exe_sha256") != hashlib.sha256(executable).hexdigest():
         raise ValueError("Self-test receipt does not match the executable.")
+    if expected_version is not None and receipt.get("version") != expected_version:
+        raise ValueError("Self-test runtime version does not match the release version.")
 
 
 def verify_members(archive):

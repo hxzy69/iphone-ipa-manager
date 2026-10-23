@@ -48,6 +48,19 @@ class ReleaseVerificationTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 verifier.verify_receipt(dict(self.receipt(), **changes), b"MZfixture")
 
+    def test_packaging_requires_matching_runtime_version(self):
+        for version in (None, "0.0.0"):
+            with (
+                self.subTest(version=version),
+                self.assertRaisesRegex(ValueError, "runtime version"),
+            ):
+                verifier.verify_receipt(
+                    dict(self.receipt(), version=version), b"MZfixture", expected_version="1.0.0"
+                )
+        verifier.verify_receipt(
+            dict(self.receipt(), version="1.0.0"), b"MZfixture", expected_version="1.0.0"
+        )
+
     def release(self, directory, embedded=None):
         source_name = "iPhoneIPAManager-1.0-source.zip"
         source = zipped({"README.md": b"fixture"})

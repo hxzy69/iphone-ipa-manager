@@ -35,3 +35,14 @@ retry failed connectivity. `/refresh` requires the established remote transport;
 device operation can take time to finish. Successful receipts, not an initial
 “Started” reply, determine completion.
 
+`/status` includes the version of the running bot. `/updates` checks the official
+GitHub release and returns its download page privately. It uses the same release
+checker as desktop **About and updates**, sends no credentials or configuration,
+and caches successful checks for five minutes. Checks never install software or
+restart a job. See [updating](UPDATING.md) before replacing a running installation.
+
+`/diagnostics` returns a private support snapshot with version, account count and
+health flags. It excludes account identities, filenames, device IDs, network
+addresses, paths, credentials and raw logs. The desktop can save the same report
+from **About and updates → Save support report**.
+

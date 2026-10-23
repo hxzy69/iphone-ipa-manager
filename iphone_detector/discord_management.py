@@ -49,6 +49,8 @@ def register(tree, guild, allow, discord, can_suggest=None):
             "**Manage and monitor**\n"
             "/panel — buttons for common actions.\n"
             "/status — active job, connection and next renewal.\n"
+            "/updates — running version and official release downloads.\n"
+            "/diagnostics — support health flags without accounts, paths or credentials.\n"
             "/history — recent verified outcomes.\n"
             "/stop — request safe cancellation, including GUI and scheduled jobs.\n"
             "/check — read-only setup checks.\n"

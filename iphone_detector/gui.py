@@ -4,14 +4,17 @@ import codecs
 import ctypes
 import json
 import os
+import queue
 import subprocess
 import sys
+import threading
 import time
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from iphone_detector import __version__
 from iphone_detector.config import CONFIG_PATH, load_config, save_config
 from iphone_detector.paths import ASSET_ROOT, DATA_ROOT, FROZEN
 from iphone_detector.settings import get_workflow, update_settings
@@ -36,7 +39,7 @@ class App:
         self.config = load_config() or {}
         self.accounts = get_workflow(self.config)
         self.editable = []
-        self.root.title("iPhone IPA Manager")
+        self.root.title(f"iPhone IPA Manager {__version__}")
         icon = ASSET_ROOT / "assets/app.png"
         if icon.is_file():
             self.icon = tk.PhotoImage(file=icon)
@@ -129,9 +132,12 @@ class App:
         )
         ttk.Label(
             outer,
-            text="Account assignments. Background sideloading. Live settings.",
+            text=f"Version {__version__} · Account assignments. Background sideloading. Live settings.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(3, 17))
+        ttk.Button(outer, text="About and updates", command=self.open_updates).pack(
+            anchor="w", pady=(0, 12)
+        )
 
         folder_row = ttk.Frame(outer)
         folder_row.pack(fill="x")
@@ -771,6 +777,106 @@ class App:
                     )
                 self.stop_started = None
         self.root.after(150, self.poll)
+
+    def open_updates(self):
+        from iphone_detector.updates import UpdateError, check_updates
+
+        existing = getattr(self, "updates_dialog", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        dialog = self.updates_dialog = tk.Toplevel(self.root)
+        dialog.title("About and updates")
+        dialog.transient(self.root)
+        dialog.configure(bg=BACKGROUND)
+        frame = ttk.Frame(dialog, padding=22)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(
+            frame, text=f"iPhone IPA Manager {__version__}", font=("Segoe UI", 16, "bold")
+        ).pack(anchor="w")
+        ttk.Label(
+            frame,
+            text="Open source · GPL-3.0-or-later\nBuilt on iloader; remote refresh research informed by JAS.",
+            wraplength=520,
+        ).pack(anchor="w", pady=12)
+        status = tk.StringVar(value="Check the official GitHub repository for a newer release.")
+        ttk.Label(frame, textvariable=status, wraplength=520).pack(anchor="w", pady=8)
+        ttk.Label(
+            frame,
+            text="Checks contact GitHub only when requested. No account settings or logs are sent.\n\n"
+            "Before replacing the app, let active jobs finish. In Discord setup, disable automatic renewal "
+            "and the remote tunnel, then stop the bot. Extract the new release into a permanent folder. "
+            "Re-enable startup and background features from the new app. Saved settings stay in place. "
+            "A new tunnel may need home Wi-Fi.",
+            style="Muted.TLabel",
+            wraplength=520,
+        ).pack(anchor="w", pady=12)
+        results = queue.Queue()
+        release_button = ttk.Button(frame, text="Open release and downloads", state="disabled")
+        release_button.pack(anchor="w", pady=8)
+
+        def worker():
+            try:
+                results.put((check_updates(), None))
+            except UpdateError as exc:
+                results.put((None, str(exc)))
+            except Exception:
+                results.put((None, "The update check could not finish. Try again later."))
+
+        def receive():
+            if not dialog.winfo_exists():
+                return
+            try:
+                release, error = results.get_nowait()
+            except queue.Empty:
+                self.root.after(100, receive)
+                return
+            check.configure(state="normal")
+            status.set(error or release.summary())
+            if release:
+                import webbrowser
+
+                release_button.configure(
+                    state="normal", command=lambda: webbrowser.open(release.url)
+                )
+
+        def start_check():
+            check.configure(state="disabled")
+            release_button.configure(state="disabled")
+            status.set("Checking GitHub…")
+            threading.Thread(target=worker, daemon=True).start()
+            self.root.after(100, receive)
+
+        check = ttk.Button(frame, text="Check for updates", command=start_check)
+        check.pack(anchor="w", pady=8)
+        ttk.Button(frame, text="Save support report", command=self.export_support_report).pack(
+            anchor="w", pady=8
+        )
+
+    def export_support_report(self):
+        from iphone_detector.diagnostics import report
+
+        path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Save support report (no credentials or raw logs)",
+            initialfile="ipa-manager-support.json",
+            defaultextension=".json",
+            filetypes=[("JSON report", "*.json")],
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text(json.dumps(report(), indent=2) + "\n", encoding="utf-8")
+        except OSError:
+            messagebox.showerror(
+                "Support report",
+                "Could not save the report. Choose a writable folder.",
+                parent=self.root,
+            )
+            return
+        self.status.set(
+            "Support report saved. It contains health flags, with no accounts, credentials, paths or raw logs."
+        )
 
     def choose_device(self, devices):
         if not devices:

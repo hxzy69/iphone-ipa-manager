@@ -12,6 +12,63 @@ from iphone_detector.settings import get_workflow
 
 
 class GuiSettingsTests(unittest.TestCase):
+    def test_update_check_keeps_tk_responsive_and_does_not_change_workers(self):
+        import threading
+        import time
+        from tkinter import ttk
+        from iphone_detector.updates import Release, REPOSITORY
+
+        root = tk.Tk()
+        root.withdraw()
+        ready = threading.Event()
+        thread_ids = []
+        main_thread = threading.get_ident()
+
+        def slow_check():
+            thread_ids.append(threading.get_ident())
+            ready.wait(2)
+            return Release("99.0.0", REPOSITORY + "/releases/tag/v99.0.0")
+
+        def widgets(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from widgets(child)
+
+        try:
+            with (
+                patch.object(gui, "load_config", return_value=configured()),
+                patch("iphone_detector.updates.check_updates", side_effect=slow_check),
+                patch.object(gui.subprocess, "Popen") as spawn,
+                patch("webbrowser.open") as browse,
+            ):
+                app = gui.App(root)
+                app.open_updates()
+                dialog = app.updates_dialog
+                app.open_updates()
+                self.assertIs(dialog, app.updates_dialog)
+                buttons = {w.cget("text"): w for w in widgets(dialog) if isinstance(w, ttk.Button)}
+                buttons["Check for updates"].invoke()
+                root.update()
+                self.assertTrue(buttons["Check for updates"].instate(["disabled"]))
+                ready.set()
+                deadline = time.monotonic() + 3
+                while (
+                    buttons["Check for updates"].instate(["disabled"])
+                    and time.monotonic() < deadline
+                ):
+                    root.update()
+                    time.sleep(0.01)
+                self.assertTrue(buttons["Check for updates"].instate(["!disabled"]))
+                self.assertNotEqual(thread_ids, [main_thread])
+                self.assertEqual(len(thread_ids), 1)
+                buttons["Open release and downloads"].invoke()
+                browse.assert_called_once_with(REPOSITORY + "/releases/tag/v99.0.0")
+                spawn.assert_not_called()
+                self.assertIsNone(app.process)
+        finally:
+            ready.set()
+            root.destroy()
+
     def test_gui_jobs_use_the_same_queue_as_the_remote_daemon(self):
         with tempfile.TemporaryDirectory() as directory:
             root = tk.Tk()

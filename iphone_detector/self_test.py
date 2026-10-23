@@ -11,6 +11,7 @@ import zipfile
 
 
 def run(report_path):
+    from iphone_detector import __version__
     from iphone_detector.paths import FROZEN, ASSET_ROOT
     from iphone_detector.storage import write_json
 
@@ -43,6 +44,22 @@ def run(report_path):
         raise RuntimeError("Elevation entry point was not disabled")
 
     check("administrator prompts disabled", no_elevation)
+
+    def update_metadata():
+        from iphone_detector.updates import Release, REPOSITORY, parse_release
+
+        release = parse_release(
+            {
+                "tag_name": "v99.0.0",
+                "draft": False,
+                "prerelease": False,
+                "html_url": REPOSITORY + "/releases/tag/v99.0.0",
+            }
+        )
+        if not release.available or Release("0.0.0", "").available:
+            raise RuntimeError("Release version comparison failed")
+
+    check("read-only release metadata validation", update_metadata)
 
     def dynamic_accounts():
         from iphone_detector.settings import get_workflow
@@ -163,6 +180,7 @@ def run(report_path):
     check("native account authentication protocol", account_auth_protocol)
     report = {
         "schema_version": 1,
+        "version": __version__,
         "ok": all(item["ok"] for item in checks),
         "frozen": FROZEN,
         "python": sys.version.split()[0],

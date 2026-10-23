@@ -67,11 +67,23 @@
   <p>Profile-only renewal is experimental. Known rejection or expiry can trigger a full install, which may transfer
     a large amount of mobile data. Apple account and device limits still apply.</p>
   <h2>If something needs attention</h2>
+  <p>For a small report safe to share, use <strong>About and updates → Save support report</strong>,
+    or Discord <code>/diagnostics</code>. This reports health flags without accounts, credentials,
+    filenames, device identifiers, network addresses, paths or raw logs.</p>
   <p>Check USB trust, available storage, Apple developer requirements and the current connection. Use
     <strong>Open activity logs</strong> or Discord <code>/history</code>. Don't publish unreviewed logs: they can contain
     account emails, device identifiers and paths.</p>
   <p>Settings live in <code>%LOCALAPPDATA%\iPhoneIPAManagerCommunity</code>. Keep a private backup.
     The release contains no saved accounts, token, device pairing or IPA files.</p>
+  <h2>Check for updates</h2>
+  <p><strong>About and updates → Check for updates</strong> and Discord <code>/updates</code> check
+    the official GitHub release. Checks are manual and do not interrupt running jobs. Your version
+    also appears in the desktop title and Discord <code>/status</code>.</p>
+  <p>Update while the iPhone is at home if you rely on remote access. Let jobs finish, then open
+    <strong>Discord setup</strong>: disable automatic renewal and the remote tunnel, stop the bot,
+    and close the app. Extract the new release into a permanent folder. In its Discord setup,
+    turn Windows startup off and back on and restore your background features. Saved settings
+    stay in application data. Keep the previous release folder until the new build works.</p>
   <footer>Independent community software. Not endorsed by Apple, Discord, Tailscale or iloader.
     Native integration derived from <a href="https://github.com/nab138/iloader">iloader</a>.
     Research inspiration: <a href="https://github.com/jkcoxson/jas">JAS by jkcoxson and contributors</a>.

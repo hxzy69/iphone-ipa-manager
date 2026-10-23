@@ -3,10 +3,13 @@
 import hashlib
 import json
 import zipfile
+import tomllib
+
+from verify_release import verify_receipt, verify_release
 
 from audit_release import ROOT, audit, source_files
 
-VERSION = "0.1.1"
+VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 
 
 def archive(destination, root, paths):
@@ -23,8 +26,7 @@ def main():
         raise ValueError("Source audit failed; inspect tools/audit_release.py output.")
     dist = ROOT / "dist"
     receipt = json.loads((dist / "self-test.json").read_text(encoding="utf-8"))
-    if receipt.get("ok") is not True or receipt.get("frozen") is not True:
-        raise ValueError("A passing packaged self-test is required.")
+    verify_receipt(receipt, (dist / "iPhoneIPAManager.exe").read_bytes())
     files = [
         dist / name
         for name in (
@@ -58,6 +60,7 @@ def main():
     )
     (output / "SHA256SUMS.txt").write_text(checksums, encoding="ascii")
     (output / "source-audit.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    verify_release(output)
     print("Created source and Windows archives; checksums are in artifacts/SHA256SUMS.txt.")
 
 

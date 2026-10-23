@@ -83,3 +83,21 @@ native helper and package the application. The exact application sources,
 `Cargo.lock`, GPL transport sources, and build scripts accompany the Windows
 release in `source/iPhoneIPAManager-0.1.1-source.zip`. No signature or application
 check prevents using a modified, rebuilt helper.
+
+
+## Verify a downloaded release
+
+Place the Windows ZIP, source ZIP and `SHA256SUMS.txt` in one folder, then run:
+
+```powershell
+python tools/verify_release.py path/to/downloads
+```
+
+This checks archive integrity, paths, the EXE self-test hash and matching embedded
+source without running the downloaded EXE. A checksum establishes consistency
+with the checksum file; it does not authenticate an untrusted publisher. Download
+all three files from this project's GitHub release.
+
+Packaging also rejects stale self-test receipts before creating archives. The
+archive version comes from `pyproject.toml`, and verification runs automatically
+after packaging.

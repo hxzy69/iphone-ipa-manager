@@ -81,7 +81,7 @@ class GuidedUpdateTests(unittest.TestCase):
             )
         self.assertEqual(code, 1)
         install.assert_called_once()
-        restore.assert_called_once_with(self.root, previous)
+        restore.assert_called_once_with(self.root.resolve(), previous)
         self.assertEqual(launch.call_count, 2)
         self.assertTrue(old.exists())
 

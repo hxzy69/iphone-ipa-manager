@@ -44,7 +44,8 @@ def owned_path(root, name):
     ):
         raise ValueError("Installation manifest contains an unsafe path.")
     path = root / relative
-    if not path.resolve().is_relative_to(root) or path.resolve() == root:
+    resolved_root = root.resolve()
+    if not path.resolve().is_relative_to(resolved_root) or path.resolve() == resolved_root:
         raise ValueError("Installation target is outside its owned folder.")
     for parent in (path, *path.parents):
         if parent == root:

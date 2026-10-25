@@ -60,7 +60,7 @@ class ImportTransactionTests(unittest.TestCase):
         self.assertFalse(saved["automation"]["notify_on_finish"])
         self.assertEqual(saved["automation"]["accounts"][0]["ipa"], target.stem)
         self.assertEqual(saved["automation"]["pending_ipa_installs"], {"1": target.stem})
-        self.assertEqual(saved["automation"]["import_directory"], str(self.source_folder))
+        self.assertEqual(saved["automation"]["import_directory"], str(self.source_folder.resolve()))
         self.assertEqual(target.read_bytes(), self.source.read_bytes())
 
     def test_cancellation_before_commit_removes_only_new_copy(self):

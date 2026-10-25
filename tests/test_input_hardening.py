@@ -108,7 +108,7 @@ class InputHardeningTests(unittest.TestCase):
             copied = Path(prepared["accounts"][0]["ipa"])
             self.assertNotEqual(copied, self.ipa)
             self.assertEqual(copied.read_bytes(), self.ipa.read_bytes())
-            self.assertEqual(request["accounts"][0]["ipa"], str(self.ipa))
+        self.assertEqual(request["accounts"][0]["ipa"], str(self.ipa.resolve()))
         self.assertFalse(copied.exists())
         self.assertTrue(self.ipa.exists())
 

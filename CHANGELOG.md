@@ -52,6 +52,9 @@ redesign. Those intermediate versions were not separate public downloads.
 
 ### Fixed
 
+- Installer ownership checks accept equivalent Windows short and long paths while
+  retaining traversal and redirected-path protection.
+
 - Upgrade `crypto-bigint` 0.7.5 → 0.7.6 and `ctutils` 0.4.4 → 0.4.5 to address RUSTSEC-2026-0387, then rebuild and retest the native helper.
 
 - Remote attempts could be claimed again after interruption; dispatched attempts

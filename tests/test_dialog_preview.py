@@ -20,6 +20,10 @@ class DialogPreviewTests(unittest.TestCase):
             root.update()
             page = app.workspace.nametowidget(app.workspace.tabs()[1])
             scroll = next(w for w in page.winfo_children() if isinstance(w, ttk.Scrollbar))
+            # Exercise both fitting and overflowing content independently of runner resolution.
+            for card in app.account_cards.winfo_children():
+                card.destroy()
+            root.update()
             self.assertFalse(scroll.winfo_ismapped())
             for index in range(3, 20):
                 app.add_account_card(index, {"email": "sample@example.com", "ipa": "Sample"})

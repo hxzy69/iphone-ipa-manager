@@ -12,6 +12,14 @@ from iphone_detector.storage import write_json
 
 
 class DesktopInstallTests(unittest.TestCase):
+    def test_owned_path_accepts_equivalent_root_spelling(self):
+        self.root.mkdir(parents=True, exist_ok=True)
+        (self.root / "child").mkdir()
+        alias = self.root / "child" / ".."
+        self.assertEqual(
+            install.owned_path(alias, "app.exe").resolve(), self.root.resolve() / "app.exe"
+        )
+
     def test_task_removal_is_limited_to_owner_installation_and_profile(self):
         self.stack.close()
         from iphone_detector.startup_task import remove_installation_tasks
@@ -94,7 +102,7 @@ class DesktopInstallTests(unittest.TestCase):
     def test_install_and_uninstall_preserve_unknown_files_and_private_settings(self):
         executable = install.install_payload(self.payload)
         self.assertEqual(executable.read_bytes(), b"MZ-test-candidate")
-        self.assertTrue(executable.is_relative_to(self.root))
+        self.assertTrue(executable.is_relative_to(self.root.resolve()))
         user_file = self.root / "my-notes.txt"
         user_file.write_text("keep this")
         install.uninstall(self.root)

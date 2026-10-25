@@ -15,6 +15,7 @@ class DialogPreviewTests(unittest.TestCase):
     def test_scrollbar_only_appears_when_accounts_outgrow_the_page(self):
         root = tk.Tk()
         try:
+            root.tk.call("tk", "scaling", 96 / 72)
             app = Preview(root)
             app.workspace.select(1)
             root.update()

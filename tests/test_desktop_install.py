@@ -125,7 +125,7 @@ class DesktopInstallTests(unittest.TestCase):
         with self.assertRaises(OSError):
             install.install_payload(self.payload)
         value = install.manifest(self.root)
-        self.assertEqual(self.root / value["executable"], first)
+        self.assertEqual((self.root / value["executable"]).resolve(), first)
         self.assertTrue(first.exists())
         self.assertEqual(len(value["files"]), 6)
         self.assertEqual(self.retarget.call_count, 2)

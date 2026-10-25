@@ -7,7 +7,7 @@ import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from iphone_detector.paths import DATA_ROOT
+from iphone_detector.paths import DATA_ROOT, FROZEN
 from iphone_detector.discord_bot import SETTINGS, save_settings, command
 
 
@@ -251,7 +251,7 @@ def launch(parent=None, *, preview=False):
             return
         try:
             start_listener()
-        except OSError:
+        except OSError, ValueError:
             status.set(
                 "Windows could not start the bot. Check folder access and try again; settings were preserved."
             )
@@ -289,6 +289,10 @@ def launch(parent=None, *, preview=False):
 
 def start_listener():
     """Discord controls can start before any optional device transport is ready."""
+    from iphone_detector.startup_task import start_existing
+
+    if FROZEN and start_existing(command(["--discord"])):
+        return None
     DATA_ROOT.mkdir(parents=True, exist_ok=True)
     with (DATA_ROOT / "discord-launch.log").open("a", encoding="utf-8") as output:
         return subprocess.Popen(

@@ -6,17 +6,17 @@ same saved assignments and job status.
 
 ## Download
 
-[**Download Windows installer — 0.3.0**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/iPhoneIPAManager-0.3.0-setup-x64.exe)
+[**Download Windows installer — 0.3.0**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.1-preview/iPhoneIPAManager-0.3.1-setup-x64.exe)
 
-[Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/iPhoneIPAManager-0.3.0-windows-x64.zip)
+[Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.1-preview/iPhoneIPAManager-0.3.1-windows-x64.zip)
 
-[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.3.0-preview)
-· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/iPhoneIPAManager-0.3.0-source.zip)
-· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/SHA256SUMS.txt)
+[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.3.1-preview)
+· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.1-preview/iPhoneIPAManager-0.3.1-source.zip)
+· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.1-preview/SHA256SUMS.txt)
 
 Run the setup EXE, or extract the portable ZIP and run `iPhoneIPAManager.exe`. Python is not required. The setup is per-user and does not request elevation.
 
-[Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
+[Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.1-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
 
 **Release status: 0.3.0 preview.** The existing installation engine has device
 testing behind it. This public distribution introduces clean onboarding and a

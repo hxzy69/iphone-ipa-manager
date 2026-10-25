@@ -141,6 +141,32 @@ class RemoteTunnelTests(unittest.TestCase):
             remote.ensure_started()
             self.assertEqual(launch.call_args.kwargs["env"]["PYINSTALLER_RESET_ENVIRONMENT"], "1")
 
+    def test_live_tunnel_prevents_restart_when_status_file_is_stale(self):
+        with (
+            patch.object(remote, "FROZEN", True),
+            patch.object(remote, "enabled", return_value=True),
+            patch.object(remote, "state", return_value={"state": "offline"}),
+            patch("iphone_detector.live_status.query", return_value={"tunnel": "ready"}),
+            patch("iphone_detector.startup_task.start_existing") as task,
+            patch.object(remote.subprocess, "Popen") as launch,
+        ):
+            remote.ensure_started()
+            task.assert_not_called()
+            launch.assert_not_called()
+
+    def test_matching_startup_task_is_preferred_to_child_process(self):
+        with (
+            patch.object(remote, "FROZEN", True),
+            patch.object(remote, "enabled", return_value=True),
+            patch.object(remote, "state", return_value={"state": "offline"}),
+            patch("iphone_detector.live_status.query", return_value=None),
+            patch("iphone_detector.startup_task.start_existing", return_value=True) as task,
+            patch.object(remote.subprocess, "Popen") as launch,
+        ):
+            remote.ensure_started()
+            task.assert_called_once()
+            launch.assert_not_called()
+
     def test_remote_startup_task_is_separate_and_uses_normal_permissions(self):
         from iphone_detector.startup_task import configure
         from unittest.mock import MagicMock

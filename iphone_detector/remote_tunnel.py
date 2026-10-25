@@ -13,7 +13,7 @@ import time
 import plistlib
 import zipfile
 
-from iphone_detector.paths import DATA_ROOT, profile_lock_name
+from iphone_detector.paths import DATA_ROOT, FROZEN, profile_lock_name
 from iphone_detector.wifi import canonical_serial
 
 LOG = logging.getLogger("iphone-detector.remote")
@@ -67,7 +67,10 @@ def state():
 
 
 def describe():
-    value = state()["state"]
+    return describe_state(state()["state"])
+
+
+def describe_state(value):
     return {
         "ready": "Remote tunnel ready.",
         "installing": "Remote installation running.",
@@ -81,7 +84,19 @@ def ensure_started():
         return
     if state()["state"] != "offline":
         return
+    if FROZEN:
+        from iphone_detector.live_status import query
+
+        live = query(DATA_ROOT)
+        if live is not None and live["tunnel"] != "offline":
+            return
     from iphone_detector.discord_bot import command
+    from iphone_detector.startup_task import start_existing
+
+    if FROZEN and start_existing(
+        command(["--remote-daemon"]), name="iPhone IPA Community Remote Tunnel"
+    ):
+        return
 
     subprocess.Popen(
         command(["--remote-daemon"]),
@@ -622,7 +637,7 @@ async def connected(config, publish):
             await asyncio.sleep(1)
 
 
-async def daemon():
+async def daemon(status_channel=None):
     from iphone_detector.run_lock import RunLock
 
     lock = RunLock()
@@ -636,6 +651,8 @@ async def daemon():
     ready("remote")
 
     def publish(value):
+        if status_channel is not None:
+            status_channel.update(value)
         try:
             atomic(STATE, {"state": value, "updated": time.time(), "pid": os.getpid()})
         except OSError:
@@ -680,6 +697,9 @@ async def daemon():
 
 def run():
     from iphone_detector.logger import setup_logging
+    from iphone_detector.live_status import StatusServer
+    from iphone_detector.auto_refresh import describe as renewal_summary
 
     setup_logging(log_file=str(DATA_ROOT / "remote-tunnel.log"))
-    asyncio.run(daemon())
+    with StatusServer(DATA_ROOT, renewal_summary) as status_channel:
+        asyncio.run(daemon(status_channel))

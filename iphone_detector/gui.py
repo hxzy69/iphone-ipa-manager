@@ -592,13 +592,18 @@ class App:
                             else None
                         )
                         detail = "Active: %s. %s" % (active[0]["mode"], progress.progress())
+                    from iphone_detector.live_status import display_snapshot
+
+                    connection, renewal, recovery = display_snapshot(
+                        DATA_ROOT, remote_tunnel.describe(), auto_refresh.describe()
+                    )
                     events.put(
                         (
                             latest,
                             active,
-                            detail,
-                            remote_tunnel.describe(),
-                            auto_refresh.describe(),
+                            detail + recovery,
+                            connection,
+                            renewal,
                             None,
                         )
                     )

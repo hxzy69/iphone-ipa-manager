@@ -1,5 +1,16 @@
 # Public preview validation
 
+## 0.3.1 — 2026-10-25
+
+443 isolated tests passed, including owner-restricted live status IPC, malformed
+and stale replies, process/profile identity checks, duplicate-start prevention,
+and validated scheduled-task launches. A real Windows task-to-client test recovered
+stale display values across different filesystem views. The packaged executable
+passed 19 self-tests and all 62 bundled application modules matched source.
+This update changes status presentation and service startup; it does not claim
+new device installation, expiry, roaming or reboot acceptance. It does not merge
+conflicting profile files or use display status to authorize device operations.
+
 ## 0.3.0 — 2026-10-25
 
 The release incorporates the intermediate results below. The approved GUI passed

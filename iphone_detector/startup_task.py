@@ -7,6 +7,61 @@ from iphone_detector.com_runtime import initialize, uninitialize
 NAME = "iPhone IPA Community Discord"
 
 
+def start_existing(arguments, name=NAME):
+    """Start a matching enabled owner task without changing its saved definition.
+
+    A missing/disabled task permits an ordinary child-process fallback. A task
+    with another executable, profile, owner or privilege level must not be used.
+    """
+    import pywintypes
+    import win32api
+    import win32com.client
+    import win32security
+    from iphone_detector.bridge_service import current_sid
+
+    if name not in {NAME, "iPhone IPA Community Remote Tunnel"}:
+        raise ValueError("Unsupported background startup task.")
+    com_owned = initialize()
+    scheduler = folder = saved = task = action = None
+    try:
+        scheduler = win32com.client.Dispatch("Schedule.Service")
+        scheduler.Connect()
+        folder = scheduler.GetFolder("\\")
+        try:
+            saved = folder.GetTask(name)
+        except pywintypes.com_error as exc:
+            codes = [exc.hresult]
+            if exc.excepinfo and len(exc.excepinfo) > 5:
+                codes.append(exc.excepinfo[5])
+            if any(type(code) is int and code & 0xFFFFFFFF == 0x80070002 for code in codes):
+                return False
+            raise OSError("Windows could not inspect the saved background task.") from exc
+        task = saved.Definition
+        principal = str(task.Principal.UserId)
+        if principal.casefold() != current_sid().casefold():
+            sid = win32security.LookupAccountName(None, principal)[0]
+            principal = win32security.ConvertSidToStringSid(sid)
+        if (
+            principal.casefold() != current_sid().casefold()
+            or task.Principal.RunLevel != 0
+            or task.Principal.LogonType != 3
+            or task.Actions.Count != 1
+        ):
+            raise ValueError("The background startup task needs local review.")
+        action = task.Actions.Item(1)
+        actual = win32api.CommandLineToArgv("app.exe " + action.Arguments)[1:]
+        if Path(action.Path).resolve() != Path(arguments[0]).resolve() or actual != arguments[1:]:
+            raise ValueError("The background startup task uses another executable or profile.")
+        if not saved.Enabled:
+            return False
+        if saved.State not in (2, 4):  # Already queued/running: never launch a duplicate.
+            saved.Run(None)
+        return True
+    finally:
+        action = task = saved = folder = scheduler = None
+        uninitialize(com_owned)
+
+
 def remove_installation_tasks(root, data_root):
     """Remove only this user's normal-permission actions inside this installation."""
     import win32api

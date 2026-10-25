@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.1 — live status recovery — 2026-10-25
+
+- The desktop reads a fresh tunnel/renewal summary directly from the running
+  service when available, recovering a stale display without restarting the tunnel.
+- A Windows named pipe restricted to the current user and SYSTEM carries bounded,
+  read-only JSON status. The client verifies the process executable and profile;
+  stale heartbeats, unexpected peers, and malformed replies are rejected.
+- Display recovery reports disagreements with local status files. It never copies
+  credentials, changes renewal timestamps, or authorizes an installation.
+- Starting the bot or tunnel prefers an existing, enabled, matching Windows logon
+  task. Different profiles, executables, owners, and elevated tasks are rejected;
+  running tasks are not launched again and disabled tasks are not enabled.
+- A fresh live tunnel prevents duplicate startup attempts caused by stale files.
+  File-based status remains available when the live channel cannot be reached.
+
 ## 0.3.0 — desktop redesign and consolidated reliability release — 2026-10-25
 
 This is the next public release after **0.2.0**. It includes every development

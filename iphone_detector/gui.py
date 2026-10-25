@@ -126,6 +126,8 @@ class App:
         return widget
 
     def _build(self):
+        scale = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96 / 72))
+        compact = self.root.winfo_screenheight() - 100 < 640 * scale
         shell = ttk.Frame(self.root, padding=(24, 20))
         shell.pack(fill="both", expand=True)
         header = ttk.Frame(shell)
@@ -156,7 +158,7 @@ class App:
         for title in ("Overview", "Accounts & apps", "Connections", "Settings"):
             host = ttk.Frame(self.workspace)
             self.workspace.add(host, text=title)
-            if title == "Overview":
+            if title == "Overview" and not compact:
                 page = ttk.Frame(host, padding=(18, 10))
                 page.pack(fill="both", expand=True)
                 pages[title] = page
@@ -169,7 +171,7 @@ class App:
             canvas.configure(yscrollcommand=scrollbar_callback(scroll, canvas))
             scroll.pack(side="right", fill="y")
             canvas.pack(side="left", fill="both", expand=True)
-            page = ttk.Frame(canvas, padding=(18, 18))
+            page = ttk.Frame(canvas, padding=(18, 10 if title == "Overview" else 18))
             window = canvas.create_window((0, 0), window=page, anchor="nw")
             page.bind(
                 "<Configure>", lambda event, c=canvas: c.configure(scrollregion=c.bbox("all"))
@@ -359,7 +361,11 @@ class App:
             side="right", before=self.device_label
         )
 
-        actions = ttk.Frame(shell, padding=(0, 12, 0, 0))
+        controls = shell
+        if compact:
+            controls = ttk.Frame(shell)
+            controls.pack(side="bottom", fill="x", before=self.workspace)
+        actions = ttk.Frame(controls, padding=(0, 12, 0, 0))
         actions.pack(fill="x")
         self._button(actions, "Save settings", self.save).pack(side="left", padx=(0, 7))
         self._button(actions, "Reload saved", lambda: self.sync_saved(force=True)).pack(
@@ -378,6 +384,10 @@ class App:
             actions, text="Stop", command=self.stop, style="Stop.TButton", state="disabled"
         )
         self.stop_button.pack(side="right")
+        from iphone_detector.dialog_ui import wrap_actions
+
+        if compact:
+            wrap_actions(actions)
         wireless = ttk.Frame(connections)
         wireless.pack(fill="x", pady=(8, 0))
         self._button(wireless, "Check Wi-Fi", lambda: self.start("wifi-check")).pack(
@@ -408,13 +418,13 @@ class App:
             if not self.accounts
             else "Choose a new IPA or edit its filename, then save."
         )
-        status_label = ttk.Label(shell, textvariable=self.status, style="Muted.TLabel")
+        status_label = ttk.Label(controls, textvariable=self.status, style="Muted.TLabel")
         status_label.pack(fill="x", pady=(11, 7))
         status_label.bind(
             "<Configure>", lambda event: status_label.configure(wraplength=max(200, event.width))
         )
         self.sync_status = tk.StringVar(value="Live sync enabled.")
-        sync_label = ttk.Label(shell, textvariable=self.sync_status, style="Muted.TLabel")
+        sync_label = ttk.Label(controls, textvariable=self.sync_status, style="Muted.TLabel")
         sync_label.pack(fill="x", pady=(0, 5))
         sync_label.bind(
             "<Configure>", lambda event: sync_label.configure(wraplength=max(200, event.width))

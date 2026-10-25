@@ -28,6 +28,9 @@ redesign. Those intermediate versions were not separate public downloads.
 
 ### Improved
 
+- On small displays with large text, Overview can scroll and bottom controls remain
+  visible. Normal desktop sizes retain the approved layout without an Overview scrollbar.
+
 - Persistent desktop save/install/stop controls, clearer install-versus-refresh
   explanations, saved/unsaved/conflicting-edit feedback, and live shared settings.
 - Keyboard traversal and focus visibility in long forms; safe Escape handling;

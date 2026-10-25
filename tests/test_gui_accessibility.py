@@ -10,6 +10,26 @@ from iphone_detector.dialog_ui import reveal_focus, shell
 
 
 class GuiAccessibilityTests(unittest.TestCase):
+    def test_small_screen_keeps_controls_visible_and_overview_reachable(self):
+        root = tk.Tk()
+        try:
+            root.winfo_screenwidth = lambda: 1024
+            root.winfo_screenheight = lambda: 768
+            root.tk.call("tk", "scaling", 192 / 72)
+            app = Preview(root)
+            root.update()
+            self.assertTrue(app.stop_button.winfo_ismapped())
+            bottom = app.stop_button.winfo_rooty() + app.stop_button.winfo_height()
+            self.assertLessEqual(bottom, root.winfo_rooty() + root.winfo_height())
+            canvas = app.page_canvases[0]
+            self.assertGreater(canvas.bbox("all")[3], canvas.winfo_height())
+            canvas.yview_moveto(1)
+            root.update()
+            self.assertEqual(canvas.yview()[1], 1.0)
+            self.assertGreater(app.activity.winfo_height(), 24)
+        finally:
+            root.destroy()
+
     def test_uninstaller_text_layout_settles_with_large_text(self):
         root = tk.Tk()
         try:

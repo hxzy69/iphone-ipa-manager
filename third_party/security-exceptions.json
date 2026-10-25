@@ -1,0 +1,10 @@
+[
+  {
+    "id": "RUSTSEC-2023-0071",
+    "name": "rsa",
+    "ecosystem": "crates.io",
+    "version": "0.9.10",
+    "expires": "2026-11-23",
+    "reason": "No upstream patched version is available. The application performs local signing and exposes no public RSA decryption service or timing oracle. Reassess before extending beyond owner-authorized local operations; independent review remains required. https://rustsec.org/advisories/RUSTSEC-2023-0071.html"
+  }
+]

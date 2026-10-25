@@ -2,14 +2,69 @@
 
 from pathlib import Path
 import subprocess
+from iphone_detector.com_runtime import initialize, uninitialize
 
 NAME = "iPhone IPA Community Discord"
 
 
+def remove_installation_tasks(root, data_root):
+    """Remove only this user's normal-permission actions inside this installation."""
+    import win32api
+    import win32security
+    import win32com.client
+    from iphone_detector.bridge_service import current_sid
+    from iphone_detector.paths import process_uses_profile
+
+    allowed = {
+        NAME,
+        "iPhone IPA Community Remote Tunnel",
+        "iPhone IPA Community Automatic Refresh",
+        "iPhone IPA Community Queue",
+    }
+    owner = current_sid()
+    com_owned = initialize()
+    scheduler = folder = saved = task = action = None
+    try:
+        scheduler = win32com.client.Dispatch("Schedule.Service")
+        scheduler.Connect()
+        folder = scheduler.GetFolder("\\")
+        names = []
+        # TASK_ENUM_HIDDEN: renewal tasks deliberately hide their console/window.
+        # Omitting these leaves old binaries active after update or uninstall.
+        for saved in folder.GetTasks(1):
+            if saved.Name not in allowed:
+                continue
+            task = saved.Definition
+            principal = str(task.Principal.UserId)
+            if principal.casefold() != owner.casefold():
+                try:
+                    sid = win32security.LookupAccountName(None, principal)[0]
+                    if win32security.ConvertSidToStringSid(sid).casefold() != owner.casefold():
+                        continue
+                except Exception:
+                    continue
+            if task.Actions.Count != 1:
+                continue
+            action = task.Actions.Item(1)
+            if not Path(action.Path).resolve().is_relative_to(Path(root).resolve()):
+                continue
+            args = win32api.CommandLineToArgv("app.exe " + action.Arguments)[1:]
+            if not process_uses_profile(args, data_root):
+                continue
+            if task.Principal.RunLevel != 0:
+                raise ValueError(
+                    "A privileged task needs administrator review; uninstall was not started."
+                )
+            names.append(saved.Name)
+        for name in names:
+            folder.DeleteTask(name, 0)
+    finally:
+        action = task = saved = folder = scheduler = None
+        uninitialize(com_owned)
+
+
 def retarget(old_executable, new_executable, data_root=None):
     """Migrate only owned actions, preserving arguments, triggers and settings."""
-    import pythoncom
-    import os
     import win32api
     import win32security
     import win32com.client
@@ -18,25 +73,20 @@ def retarget(old_executable, new_executable, data_root=None):
 
     data_root = Path(data_root or DATA_ROOT).resolve()
     owner = current_sid()
-    default_root = (
-        Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local"))
-        / "iPhoneIPAManagerCommunity"
-    )
-
     allowed = {
         NAME,
         "iPhone IPA Community Remote Tunnel",
         "iPhone IPA Community Automatic Refresh",
         "iPhone IPA Community Queue",
     }
-    pythoncom.CoInitialize()
+    com_owned = initialize()
     scheduler = folder = saved = task = action = None
     try:
         scheduler = win32com.client.Dispatch("Schedule.Service")
         scheduler.Connect()
         folder = scheduler.GetFolder("\\")
         definitions = []
-        for saved in folder.GetTasks(0):
+        for saved in folder.GetTasks(1):
             if saved.Name not in allowed:
                 continue
             task = saved.Definition
@@ -51,15 +101,9 @@ def retarget(old_executable, new_executable, data_root=None):
                 raise ValueError("A startup task needs local review before migration.")
             action = task.Actions.Item(1)
             args = win32api.CommandLineToArgv("app.exe " + action.Arguments)[1:]
-            try:
-                profile = (
-                    Path(args[args.index("--data-dir") + 1])
-                    if "--data-dir" in args
-                    else default_root
-                )
-            except IndexError:
-                raise ValueError("A startup task has invalid data-directory arguments.") from None
-            if profile.resolve() != data_root:
+            from iphone_detector.paths import process_uses_profile
+
+            if not process_uses_profile(args, data_root):
                 continue
             if Path(action.Path).resolve() == Path(new_executable).resolve():
                 continue
@@ -74,16 +118,15 @@ def retarget(old_executable, new_executable, data_root=None):
     finally:
         definitions = []
         action = task = saved = folder = scheduler = None
-        pythoncom.CoUninitialize()
+        uninitialize(com_owned)
 
 
 def configure(enabled, arguments, name=NAME):
-    import pythoncom
     import win32com.client
     import pywintypes
     from iphone_detector.bridge_service import current_sid
 
-    pythoncom.CoInitialize()
+    com_owned = initialize()
     try:
         scheduler = win32com.client.Dispatch("Schedule.Service")
         scheduler.Connect()
@@ -92,7 +135,12 @@ def configure(enabled, arguments, name=NAME):
             try:
                 folder.DeleteTask(name, 0)
             except pywintypes.com_error as exc:
-                if (exc.hresult & 0xFFFFFFFF) != 0x80070002:
+                # IDispatch can wrap ERROR_FILE_NOT_FOUND in DISP_E_EXCEPTION;
+                # Task Scheduler puts the actual HRESULT in EXCEPINFO.scode.
+                codes = [exc.hresult]
+                if exc.excepinfo and len(exc.excepinfo) > 5:
+                    codes.append(exc.excepinfo[5])
+                if not any(type(code) is int and code & 0xFFFFFFFF == 0x80070002 for code in codes):
                     raise
             return
         owner = current_sid()
@@ -123,4 +171,4 @@ def configure(enabled, arguments, name=NAME):
     finally:
         # Release COM proxies while this apartment is still initialized.
         action = trigger = task = folder = scheduler = None
-        pythoncom.CoUninitialize()
+        uninitialize(com_owned)

@@ -7,7 +7,12 @@ import tempfile
 import time
 
 
-def write_json(path, value):
+def write_json(path, value, *, exclusive=False):
+    """Replace atomically, or publish once without overwriting an existing receipt.
+
+    On Windows, rename without replacement atomically refuses an existing target.
+    A producer racing a delivery acknowledgement cannot reset it to pending.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
@@ -27,12 +32,21 @@ def write_json(path, value):
             os.fsync(handle.fileno())
         for attempt in range(40):
             try:
-                temporary.replace(path)
+                if exclusive:
+                    temporary.rename(path)
+                else:
+                    temporary.replace(path)
                 break
+            except FileExistsError:
+                if exclusive:
+                    return False
+                raise
             except PermissionError:
                 if attempt == 39:
                     raise
                 time.sleep(0.025)
+        if exclusive:
+            return True
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

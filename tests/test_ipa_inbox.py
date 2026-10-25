@@ -1,3 +1,4 @@
+from fixtures import write_sample_app
 import tempfile
 import unittest
 import zipfile
@@ -7,6 +8,25 @@ from iphone_detector.ipa_inbox import import_ipa
 
 
 class InboxTests(unittest.TestCase):
+    def test_import_name_collision_never_overwrites_an_existing_ipa(self):
+        from unittest.mock import Mock, patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "Sample.ipa"
+            managed = root / "managed"
+            managed.mkdir()
+            with zipfile.ZipFile(source, "w") as archive:
+                write_sample_app(archive)
+            existing = managed / ("Sample-" + "a" * 12 + ".ipa")
+            existing.write_bytes(b"preserve-existing")
+            with patch("iphone_detector.ipa_inbox.uuid.uuid4", return_value=Mock(hex="a" * 32)):
+                with self.assertRaises(FileExistsError):
+                    import_ipa(source, managed)
+            self.assertEqual(existing.read_bytes(), b"preserve-existing")
+            self.assertEqual(list(managed.iterdir()), [existing])
+            self.assertTrue(source.exists())
+
     def test_archive_paths_cannot_escape_the_app_directory(self):
         from iphone_detector.ipa_inbox import validate_ipa
 
@@ -19,7 +39,7 @@ class InboxTests(unittest.TestCase):
                 "Payload/../outside.txt",
             ):
                 with zipfile.ZipFile(source, "w") as archive:
-                    archive.writestr("Payload/Test.app/Info.plist", b"plist")
+                    write_sample_app(archive, "Payload/Test.app/Info.plist")
                     archive.writestr(bad, b"bad")
                 with self.assertRaisesRegex(ValueError, "unsafe"):
                     validate_ipa(source)
@@ -30,8 +50,8 @@ class InboxTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "ambiguous.ipa"
             with zipfile.ZipFile(source, "w") as archive:
-                archive.writestr("Payload/One.app/Info.plist", b"plist")
-                archive.writestr("Payload/Two.app/Info.plist", b"plist")
+                write_sample_app(archive, "Payload/One.app/Info.plist")
+                write_sample_app(archive, "Payload/Two.app/Info.plist")
             with self.assertRaisesRegex(ValueError, "exactly one"):
                 validate_ipa(source)
 
@@ -40,7 +60,7 @@ class InboxTests(unittest.TestCase):
             root = Path(folder)
             source = root / "New Version.ipa"
             with zipfile.ZipFile(source, "w") as archive:
-                archive.writestr("Payload/Test.app/Info.plist", b"plist")
+                write_sample_app(archive, "Payload/Test.app/Info.plist")
             first = import_ipa(source, root / "managed")
             second = import_ipa(source, root / "managed")
             self.assertNotEqual(first, second)

@@ -2,6 +2,8 @@
 
 import psutil
 import time
+import math
+import logging
 
 from iphone_detector.storage import write_json
 from iphone_detector.job_history import read
@@ -45,7 +47,14 @@ def active_jobs(root):
                 continue
             try:
                 if (
-                    type(value.get("started_at")) not in (int, float)
+                    type(value.get("pid")) is not int
+                    or value["pid"] <= 0
+                    or type(value.get("process_created")) not in (int, float)
+                    or not math.isfinite(value["process_created"])
+                    or value["process_created"] <= 0
+                    or type(value.get("started_at")) not in (int, float)
+                    or not math.isfinite(value["started_at"])
+                    or not 0 <= value["started_at"] <= time.time() + 5
                     or not isinstance(value.get("mode"), str)
                     or not isinstance(value.get("accounts"), list)
                     or not value["accounts"]
@@ -69,6 +78,13 @@ def active_jobs(root):
 
 def stop_active(root):
     jobs = active_jobs(root)
+    requested = 0
     for value in jobs:
-        (value["job"] / "stop").touch()
-    return len(jobs)
+        try:
+            (value["job"] / "stop").touch()
+            requested += 1
+        except OSError:
+            logging.getLogger(__name__).exception(
+                "Could not persist cancellation for a worker; continuing with other active runs."
+            )
+    return requested

@@ -8,6 +8,28 @@ from iphone_detector.diagnostics import report
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_component_exit_history_exports_only_known_states(self):
+        for state, expected in (
+            ("failed", "failed"),
+            ("stopped", "stopped"),
+            ("private-value", "unknown"),
+            ({"private": "value"}, "unknown"),
+        ):
+            with (
+                self.subTest(state=state),
+                patch(
+                    "iphone_detector.job_history.read",
+                    return_value={
+                        "state": state,
+                        "incident": "private-value",
+                        "path": "private-value",
+                    },
+                ),
+            ):
+                value = report()
+            self.assertEqual(set(value["last_service_exits"].values()), {expected})
+            self.assertNotIn("private-value", json.dumps(value))
+
     def test_snapshot_uses_only_health_flags(self):
         private = "PRIVATE-value-never-export"
         with (

@@ -15,6 +15,56 @@ def register(tree, guild, allow, can_suggest, discord):
     from iphone_detector.config import load_config
 
     @tree.command(
+        name="maintenance",
+        description="Check free disk space or remove old completed-run logs",
+        guild=guild,
+    )
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="Show storage", value="storage"),
+            app_commands.Choice(name="Clean old logs and terminal records", value="cleanup"),
+        ]
+    )
+    async def maintenance(interaction: discord.Interaction, action: str = "storage"):
+        if not await allow(interaction):
+            return
+        from iphone_detector import maintenance as service
+
+        if action == "storage":
+
+            def overview():
+                value = service.preview()
+                return f"Free space: {value['free_bytes'] / 1024**3:.1f} GiB. Safe cleanup: {value['files']} files, {value['reclaimable_bytes'] / 1024**2:.1f} MiB. IPA files and recovery receipts are preserved."
+
+            await reply(interaction, overview)
+            return
+        if action != "cleanup":
+            await interaction.response.send_message("Choose storage or cleanup.", ephemeral=True)
+            return
+
+        class Clean(discord.ui.View):
+            async def interaction_check(self, item):
+                return await allow(item)
+
+            @discord.ui.button(
+                label="Clean old completed-run logs", style=discord.ButtonStyle.secondary
+            )
+            async def clean(self, item, button):
+                await reply(
+                    item,
+                    lambda: (
+                        f"Removed {service.clean()} old files. IPA files and recovery receipts were preserved."
+                    ),
+                )
+                self.stop()
+
+        await interaction.response.send_message(
+            "Remove successful inactive-run logs older than 30 days and terminal queue/delivered reports older than 90 days? Unresolved runs, IPA files, credentials and completion receipts are preserved.",
+            ephemeral=True,
+            view=Clean(timeout=120),
+        )
+
+    @tree.command(
         name="update",
         description="Prepare a verified app update or activate/roll back with confirmation",
         guild=guild,
@@ -192,7 +242,11 @@ def register(tree, guild, allow, can_suggest, discord):
                 return (
                     job_queue.summary()
                     + "\n"
-                    + "\n".join(f"{e['id']} · {e['mode']} · {e['state']}" for e in values)
+                    + "\n".join(
+                        f"{e['id']} · {e['mode']} · {e['state']}"
+                        + (" · " + job_queue.failure_label(e) if job_queue.failure_label(e) else "")
+                        for e in values
+                    )
                 )
             if action in ("install", "refresh"):
                 if action == "refresh" and account is not None:

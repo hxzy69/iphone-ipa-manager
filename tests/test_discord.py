@@ -11,6 +11,170 @@ from iphone_detector.run_lock import RunLock
 
 
 class DiscordTests(unittest.TestCase):
+    def test_unreadable_remote_settings_write_a_failure_receipt_before_any_launch(self):
+        import ipa_manager
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("iphone_detector.config.load_config", return_value=configured()),
+            patch("iphone_detector.logger.setup_logging"),
+            patch("iphone_detector.remote_tunnel.enabled", side_effect=ValueError("bad settings")),
+            patch("iphone_detector.connection_router.run_automatic") as run,
+        ):
+            job = Path(directory)
+            self.assertEqual(ipa_manager.worker("discord-run", job), 1)
+            self.assertEqual(
+                json.loads((job / "result.json").read_text())["error_code"],
+                "REMOTE_SETTINGS_UNREADABLE",
+            )
+            run.assert_not_called()
+
+    def test_optional_account_metadata_failure_preserves_the_completed_operation_receipt(self):
+        import ipa_manager
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("iphone_detector.config.load_config", return_value=configured()),
+            patch("iphone_detector.logger.setup_logging"),
+            patch("iphone_detector.background.validate_selection"),
+            patch.object(RunLock, "acquire", return_value=True),
+            patch.object(RunLock, "close"),
+            patch("iphone_detector.worker_registry.register"),
+            patch("iphone_detector.worker_registry.finish"),
+            patch(
+                "iphone_detector.connection_router.run_refresh",
+                return_value={"ok": True, "completed_accounts": 3},
+            ),
+            patch(
+                "iphone_detector.operations.collect_native",
+                side_effect=OSError("metadata unavailable"),
+            ),
+            patch("iphone_detector.ipa_assignments.acknowledge_installs"),
+            patch("iphone_detector.auto_refresh.record_success"),
+        ):
+            job = Path(directory)
+            self.assertEqual(ipa_manager.worker("discord-refresh", job), 0)
+            result = json.loads((job / "result.json").read_text())
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["completed_accounts"], 3)
+
+    def test_slow_preflight_keeps_gateway_responsive_and_can_be_cancelled(self):
+        import threading
+
+        async def exercise():
+            entered, release = threading.Event(), threading.Event()
+            controller = bot.Controller()
+
+            def preflight(*args, **kwargs):
+                entered.set()
+                if not release.wait(5):
+                    raise AssertionError("Preflight test timed out")
+                return True
+
+            with (
+                tempfile.TemporaryDirectory() as directory,
+                patch.object(bot, "DATA_ROOT", Path(directory)),
+                patch("iphone_detector.connection_router.route_ready", side_effect=preflight),
+                patch("iphone_detector.config.load_config", return_value=configured()),
+                patch("iphone_detector.background.make_job", return_value=configured()),
+                patch.object(bot.subprocess, "Popen") as spawn,
+            ):
+                task = asyncio.create_task(controller.start_async(refresh=True))
+                try:
+                    for _ in range(200):
+                        if entered.is_set():
+                            break
+                        await asyncio.sleep(0.005)
+                    self.assertTrue(entered.is_set())
+                    with self.assertRaisesRegex(RuntimeError, "already starting"):
+                        await controller.start_async(refresh=True)
+                    self.assertIn("Cancelling", controller.stop())
+                finally:
+                    release.set()
+                with self.assertRaisesRegex(RuntimeError, "cancelled before launch"):
+                    await task
+                self.assertFalse(controller.starting)
+                spawn.assert_not_called()
+
+        asyncio.run(exercise())
+
+    def test_cancelled_start_waits_for_thread_and_does_not_launch_later(self):
+        import threading
+
+        async def exercise():
+            release = threading.Event()
+            controller = bot.Controller()
+
+            def start(**kwargs):
+                release.wait(5)
+                self.assertTrue(controller._cancel_start.is_set())
+
+            with patch.object(controller, "start", side_effect=start):
+                task = asyncio.create_task(controller.start_async())
+                await asyncio.sleep(0.02)
+                task.cancel()
+                await asyncio.sleep(0.02)
+                try:
+                    self.assertTrue(controller.starting)
+                    self.assertFalse(task.done())
+                finally:
+                    release.set()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                self.assertFalse(controller.starting)
+
+        asyncio.run(exercise())
+
+    def test_local_install_does_not_require_legacy_service_or_warm_remote_tunnel(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(bot, "DATA_ROOT", Path(directory)),
+            patch("iphone_detector.connection_router.route_ready", return_value=True) as ready,
+            patch("iphone_detector.bridge_service.installed", return_value=False),
+            patch("iphone_detector.remote_tunnel.enabled", return_value=True),
+            patch("iphone_detector.remote_tunnel.state", return_value={"state": "waiting"}),
+            patch("iphone_detector.remote_tunnel.ensure_started"),
+            patch("iphone_detector.config.load_config", return_value=configured()),
+            patch("iphone_detector.background.make_job", return_value=configured()),
+            patch.object(bot.subprocess, "Popen") as spawn,
+        ):
+            bot.Controller().start()
+            ready.assert_called_once_with()
+            spawn.assert_called_once()
+            self.assertIn("discord-run", spawn.call_args.args[0])
+
+    def test_unavailable_local_and_remote_routes_do_not_launch_an_install(self):
+        with (
+            patch("iphone_detector.connection_router.route_ready", return_value=False),
+            patch("iphone_detector.bridge_service.installed", return_value=False),
+            patch("iphone_detector.remote_tunnel.enabled", return_value=True),
+            patch("iphone_detector.remote_tunnel.state", return_value={"state": "waiting"}),
+            patch("iphone_detector.remote_tunnel.ensure_started"),
+            patch.object(bot.subprocess, "Popen") as spawn,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "waiting"):
+                bot.Controller().start()
+            spawn.assert_not_called()
+
+    def test_verified_local_refresh_is_not_blocked_by_an_offline_enabled_tunnel(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(bot, "DATA_ROOT", Path(directory)),
+            patch("iphone_detector.connection_router.route_ready", return_value=True),
+            patch("iphone_detector.bridge_service.installed", return_value=False),
+            patch("iphone_detector.remote_tunnel.enabled", return_value=True),
+            patch("iphone_detector.remote_tunnel.state", return_value={"state": "waiting"}),
+            patch("iphone_detector.remote_tunnel.ensure_started") as remote,
+            patch("iphone_detector.config.load_config", return_value=configured()),
+            patch("iphone_detector.background.make_job", return_value=configured()),
+            patch.object(bot.subprocess, "Popen") as spawn,
+        ):
+            controller = bot.Controller()
+            controller.start(refresh=True)
+            spawn.assert_called_once()
+            remote.assert_not_called()
+            self.assertIn("discord-refresh", spawn.call_args.args[0])
+
     def test_worker_records_corrupt_settings_without_starting_device_work(self):
         import ipa_manager
         from iphone_detector.config import ConfigurationError
@@ -137,7 +301,7 @@ class DiscordTests(unittest.TestCase):
             patch("iphone_detector.bridge_service.installed", return_value=False),
             patch.object(bot.subprocess, "Popen") as launch,
         ):
-            with self.assertRaisesRegex(RuntimeError, "Install the Wi-Fi service"):
+            with self.assertRaisesRegex(RuntimeError, "Connect the paired iPhone"):
                 bot.Controller().start()
             launch.assert_not_called()
 
@@ -168,7 +332,7 @@ class DiscordTests(unittest.TestCase):
                 controller.start(refresh=True)
             spawn.assert_not_called()
 
-    def test_refresh_worker_uses_tunnel_without_local_route_or_desktop(self):
+    def test_refresh_worker_uses_shared_refresh_service_without_desktop(self):
         import ipa_manager
 
         config = configured({"automation": {"notify_on_finish": False}})
@@ -179,7 +343,7 @@ class DiscordTests(unittest.TestCase):
             patch("iphone_detector.config.load_config", return_value=config),
             patch("iphone_detector.remote_tunnel.enabled", return_value=True),
             patch(
-                "iphone_detector.remote_tunnel.submit",
+                "iphone_detector.connection_router.run_refresh",
                 return_value={"ok": True, "completed_accounts": 3, "refreshed_accounts": 3},
             ) as submit,
             patch("iphone_detector.connection_router.run_automatic") as automatic,
@@ -188,7 +352,6 @@ class DiscordTests(unittest.TestCase):
             self.assertEqual(ipa_manager.worker("discord-refresh", job), 0)
             submit.assert_called_once()
             automatic.assert_not_called()
-            self.assertTrue((job / "refresh-request").exists())
 
     def test_progress_ignores_incomplete_json_and_never_exposes_email(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -335,6 +498,7 @@ class DiscordTests(unittest.TestCase):
                     "retry",
                     "backup",
                     "update",
+                    "maintenance",
                     "stop",
                     "inbox",
                     "assign",
@@ -491,12 +655,12 @@ class DiscordTests(unittest.TestCase):
             patch("iphone_detector.bridge_service.installed", return_value=True),
             patch("iphone_detector.wifi.WifiBridge", return_value=nullcontext(Mock())),
             patch(
-                "iphone_detector.background.run_background",
+                "iphone_detector.connection_router.run_automatic",
                 return_value={"ok": True, "completed_accounts": 3},
             ) as native,
         ):
             self.assertEqual(ipa_manager.worker("discord-run", Path(directory)), 0)
-            self.assertEqual(native.call_args.args[2], "Network")
+            self.assertEqual(native.call_args.args[2], None)
             native.assert_called_once()
 
     def test_worker_single_account_routes_selection_to_router(self):

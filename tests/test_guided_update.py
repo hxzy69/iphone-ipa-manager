@@ -24,6 +24,67 @@ def zipped(files):
 
 
 class GuidedUpdateTests(unittest.TestCase):
+    def test_failed_download_removes_only_this_attempt_and_preserves_prepared_update(self):
+        previous = self.root / "updates/previous"
+        previous.mkdir(parents=True)
+        (previous / "ready.json").write_text("keep-previous-plan")
+        write_json(self.root / "prepared-update.json", {"plan": str(previous / "ready.json")})
+
+        def partial(url, path, limit):
+            path.write_bytes(b"partial-download")
+            raise OSError("offline")
+
+        with patch.object(update, "download", side_effect=partial):
+            with self.assertRaises(OSError):
+                update.prepare(
+                    Release("99.0.0-preview", REPOSITORY + "/releases/tag/v99.0.0-preview")
+                )
+        self.assertEqual(list((self.root / "updates").iterdir()), [previous])
+        self.assertEqual((previous / "ready.json").read_text(), "keep-previous-plan")
+        self.assertEqual(
+            json.loads((self.root / "prepared-update.json").read_text())["plan"],
+            str(previous / "ready.json"),
+        )
+
+    def test_failed_archive_verification_leaves_no_staging_directory(self):
+        files = self.fixture()
+        files["iPhoneIPAManager-99.0.0-windows-x64.zip"] = b"corrupt"
+        with patch.object(
+            update,
+            "download",
+            side_effect=lambda url, path, limit: path.write_bytes(files[path.name]),
+        ):
+            with self.assertRaises(ValueError):
+                update.prepare(
+                    Release("99.0.0-preview", REPOSITORY + "/releases/tag/v99.0.0-preview")
+                )
+        self.assertEqual(list((self.root / "updates").iterdir()), [])
+
+    def test_managed_activation_restores_installation_record_when_launch_fails(self):
+        from iphone_detector import desktop_install
+
+        previous = {"executable": "old.exe", "files": ["old.exe"], "version": "0.0.1"}
+
+        # activation() creates its candidate paths before invoking the updater.
+        def stage(payload, root, **kwargs):
+            self.assertTrue(kwargs["_lock_held"])
+            return self.root / "new.exe"
+
+        with (
+            patch.object(desktop_install, "installation_root", return_value=self.root),
+            patch.object(desktop_install, "manifest", return_value=previous),
+            patch.object(desktop_install, "install_payload", side_effect=stage) as install,
+            patch.object(desktop_install, "restore_installation") as restore,
+        ):
+            code, old, _, _, launch, _ = self.activation(
+                launch_failure=ValueError("startup failed")
+            )
+        self.assertEqual(code, 1)
+        install.assert_called_once()
+        restore.assert_called_once_with(self.root, previous)
+        self.assertEqual(launch.call_count, 2)
+        self.assertTrue(old.exists())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -106,7 +167,7 @@ class GuidedUpdateTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     integrity.verify_members(archive)
 
-    def activation(self, failure=None, pending=None, runtime_failure=None):
+    def activation(self, failure=None, pending=None, runtime_failure=None, launch_failure=None):
         old, new = self.root / "old.exe", self.root / "new.exe"
         old.write_bytes(b"MZold")
         new.write_bytes(b"MZnew")
@@ -123,7 +184,9 @@ class GuidedUpdateTests(unittest.TestCase):
             patch.object(update, "wait_for_exit"),
             patch.object(update, "check_runtime", side_effect=runtime_failure) as check,
             patch.object(update, "configure_tasks", side_effect=failure) as tasks,
-            patch.object(update, "launch") as launch,
+            patch.object(
+                update, "launch", side_effect=[launch_failure, None] if launch_failure else None
+            ) as launch,
         ):
             code = update.activate(plan, 123)
         return code, old, new, tasks, launch, check
@@ -170,7 +233,7 @@ class GuidedUpdateTests(unittest.TestCase):
         old, new = self.root / "old.exe", self.root / "new.exe"
         import subprocess
 
-        arguments = subprocess.list2cmdline(["--data-dir", str(self.root), "--auto-refresh"])
+        arguments = subprocess.list2cmdline(["--data-dir=" + str(self.root), "--auto-refresh"])
         action = Mock(Path=str(old), Arguments=arguments)
         task = Mock()
         task.Principal.RunLevel = 0
@@ -182,7 +245,7 @@ class GuidedUpdateTests(unittest.TestCase):
         saved.Name = "iPhone IPA Community Automatic Refresh"
         saved.Definition = task
         folder = Mock()
-        folder.GetTasks.return_value = [saved]
+        folder.GetTasks.side_effect = lambda flags: [saved] if flags == 1 else []
         scheduler = Mock()
         scheduler.GetFolder.return_value = folder
         with (
@@ -193,6 +256,7 @@ class GuidedUpdateTests(unittest.TestCase):
         self.assertEqual(action.Path, str(new))
         self.assertEqual(action.Arguments, arguments)
         self.assertIs(task.Triggers, trigger)
+        folder.GetTasks.assert_called_once_with(1)
         folder.RegisterTaskDefinition.assert_called_once()
 
     def test_elevated_startup_task_is_not_modified(self):

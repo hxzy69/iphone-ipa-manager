@@ -32,13 +32,23 @@ def worker(mode, job, parent_pid=None, accounts=None):
         return 1
     from iphone_detector.remote_tunnel import enabled as remote_enabled
 
-    tunnel_run = mode in ("discord-run", "discord-refresh", "wifi-run") and remote_enabled()
-    remote = mode in ("discord-run", "discord-refresh")
-    if mode == "discord-refresh" and not tunnel_run:
-        (job / "result.json").write_text(
-            json.dumps({"error": "Enable the remote tunnel to use profile refresh."})
+    try:
+        remote_configured = remote_enabled() if mode in ("discord-run", "wifi-run") else False
+        tunnel_run = mode in ("discord-run", "discord-refresh") or (
+            mode == "wifi-run" and remote_configured
+        )
+    except OSError, ValueError, TypeError:
+        from iphone_detector.storage import write_json
+
+        write_json(
+            job / "result.json",
+            {
+                "error": "Remote settings need repair before starting this operation.",
+                "error_code": "REMOTE_SETTINGS_UNREADABLE",
+            },
         )
         return 1
+    remote = mode in ("discord-run", "discord-refresh")
     if mode == "discord-refresh" and accounts:
         (job / "result.json").write_text(
             json.dumps({"error": "Profile refresh always renews all configured installed apps."})
@@ -102,8 +112,13 @@ def worker(mode, job, parent_pid=None, accounts=None):
         from iphone_detector.storage import write_json
         from iphone_detector.operations import collect_native
 
-        collect_native(job)
         write_json(job / "result.json", data)
+        try:
+            collect_native(job)
+        except OSError, ValueError, TypeError, KeyError:
+            log.warning(
+                "Could not collect account completion metadata; the final operation receipt was preserved."
+            )
         try:
             from iphone_detector.ipa_assignments import acknowledge_installs
 
@@ -116,7 +131,7 @@ def worker(mode, job, parent_pid=None, accounts=None):
             from iphone_detector.auto_refresh import record_success
 
             record_success(job, data)
-        except OSError:
+        except OSError, ValueError, TypeError, KeyError:
             log.warning("Could not update the automatic renewal schedule.")
 
     try:
@@ -128,11 +143,9 @@ def worker(mode, job, parent_pid=None, accounts=None):
             from iphone_detector.background import BackgroundStop
 
             if mode == "discord-refresh":
-                from iphone_detector.remote_tunnel import submit, atomic
+                from iphone_detector.connection_router import run_refresh
 
-                (job / "refresh-request").touch()
-                atomic(job / "route.json", {"transport": "remote", "operation": "refresh"})
-                result(submit(job, BackgroundStop(stopped)))
+                result(run_refresh(job, BackgroundStop(stopped)))
             else:
                 from iphone_detector.connection_router import run_automatic
 
@@ -204,9 +217,11 @@ def worker(mode, job, parent_pid=None, accounts=None):
                     outcome[0] = 0
                 except Cancelled:
                     log.info("Installation cancelled.")
+                    result({"cancelled": True})
                     outcome[0] = 130
                 except Exception as exc:
                     failure = str(exc)
+                    result({"error": str(exc)})
                     log.exception("Installation failed. Inspect the activity log before retrying.")
                     outcome[0] = 1
                 finally:
@@ -337,6 +352,8 @@ def main():
     parser.add_argument("--remote-daemon", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--queue-runner", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--activate-update", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--desktop-setup", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--desktop-uninstall", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--auto-refresh", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--enable-auto-refresh", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
@@ -369,6 +386,16 @@ def main():
         if not args.data_dir.is_absolute():
             parser.error("--data-dir must be an absolute folder path")
         os.environ["IPA_MANAGER_DATA_DIR"] = str(args.data_dir.resolve())
+    if args.desktop_setup:
+        from iphone_detector.desktop_install import setup_window
+
+        setup_window(payload=args.desktop_setup)
+        return 0
+    if args.desktop_uninstall:
+        from iphone_detector.desktop_install import launch_uninstaller
+
+        launch_uninstaller(args.desktop_uninstall)
+        return 0
     if args.setup_remote:
         from iphone_detector.remote_setup import configure
 
@@ -382,9 +409,9 @@ def main():
         return run(args.report_file.resolve())
     if args.queue_runner:
         from iphone_detector.job_queue import run
+        from iphone_detector.service_entry import run as run_service
 
-        run()
-        return 0
+        return run_service("queue", run)
     if args.activate_update:
         from iphone_detector.guided_update import activate
 
@@ -396,14 +423,14 @@ def main():
         return 0
     if args.auto_refresh:
         from iphone_detector.auto_refresh import run
+        from iphone_detector.service_entry import run as run_service
 
-        run()
-        return 0
+        return run_service("renewal", run)
     if args.remote_daemon:
         from iphone_detector.remote_tunnel import run
+        from iphone_detector.service_entry import run as run_service
 
-        run()
-        return 0
+        return run_service("remote", run)
     if args.install_bridge:
         from iphone_detector.paths import DATA_ROOT
         from iphone_detector.logger import setup_logging
@@ -425,9 +452,9 @@ def main():
         return 0
     if args.discord:
         from iphone_detector.discord_bot import run
+        from iphone_detector.service_entry import run as run_service
 
-        run()
-        return 0
+        return run_service("discord", run)
     if args.worker:
         if args.job_dir is None:
             parser.error("--worker requires --job-dir")

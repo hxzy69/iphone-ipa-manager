@@ -211,7 +211,7 @@ class RemoteTunnelTests(unittest.TestCase):
                 "iphone_detector.config.load_config",
                 return_value={"device": {"serial": "expected"}},
             ),
-            patch("iphone_detector.background.make_job", return_value={}),
+            patch("iphone_detector.background.make_job", return_value={"timeout": 900}),
             patch("iphone_detector.background.run_background") as native,
         ):
             job = Path(folder)
@@ -224,7 +224,7 @@ class RemoteTunnelTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as folder,
             patch.object(remote, "DATA_ROOT", Path(folder)),
             patch.object(remote, "state", return_value={"state": "ready"}),
-            patch("iphone_detector.background.make_job", return_value={}),
+            patch("iphone_detector.background.make_job", return_value={"timeout": 900}),
         ):
             job = Path(folder) / "automation-runs/test"
             job.mkdir(parents=True)
@@ -272,7 +272,8 @@ class RemoteTunnelTests(unittest.TestCase):
             patch.object(remote, "DATA_ROOT", Path(folder)),
             patch.object(remote, "state", return_value={"state": "ready"}),
             patch(
-                "iphone_detector.background.make_job", return_value={"accounts": [{"account": 2}]}
+                "iphone_detector.background.make_job",
+                return_value={"timeout": 900, "accounts": [{"account": 2}]},
             ),
         ):
             job = Path(folder) / "automation-runs/test"

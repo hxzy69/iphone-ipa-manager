@@ -11,6 +11,56 @@ def read(path):
         return {}
 
 
+def describe(job):
+    """Use the same conservative outcome in the GUI and Discord history."""
+    result = read(job / "result.json")
+    request = read(job / "backend-job.json") or read(job / "selection.json")
+    raw = request.get("accounts")
+    valid = (
+        isinstance(raw, list)
+        and 1 <= len(raw) <= 25
+        and all(
+            isinstance(a, dict) and type(a.get("account")) is int and 1 <= a["account"] <= 25
+            for a in raw
+        )
+    )
+    accounts = [a["account"] for a in raw] if valid else []
+    valid = valid and len(set(accounts)) == len(accounts)
+    verified = (
+        valid
+        and result.get("ok") is True
+        and type(result.get("completed_accounts")) is int
+        and result["completed_accounts"] == len(accounts)
+        and not result.get("prepared_only")
+    )
+    status = (
+        "Completed"
+        if verified
+        else "Prepared only"
+        if result.get("ok") is True and result.get("prepared_only")
+        else "Cancelled"
+        if result.get("cancelled") is True
+        else "Needs attention"
+        if result
+        else "Unfinished or running"
+    )
+    route = result.get("transport") or read(job / "route.json").get("transport")
+    return {
+        "status": status,
+        "accounts": accounts,
+        "operation": "Refresh"
+        if request.get("profile_refresh")
+        or "refreshed_accounts" in result
+        or (job / "refresh-request").exists()
+        else "Install",
+        "transport": {"usb": "USB", "local-wifi": "local Wi-Fi", "remote": "remote tunnel"}.get(
+            route, ""
+        )
+        if isinstance(route, str)
+        else "",
+    }
+
+
 def recent_jobs(root, limit=5):
     candidates = []
     for folder, prefixes in (
@@ -34,43 +84,5 @@ def recent_jobs(root, limit=5):
     for updated, job in sorted(candidates, key=lambda entry: entry[0], reverse=True)[
         : max(1, min(10, limit))
     ]:
-        result = read(job / "result.json")
-        request = read(job / "backend-job.json")
-        raw_accounts = request.get("accounts", [])
-        if not isinstance(raw_accounts, list):
-            raw_accounts = []
-        accounts = [
-            entry.get("account", index + 1)
-            for index, entry in enumerate(raw_accounts)
-            if isinstance(entry, dict)
-        ]
-        accounts = [number for number in accounts if type(number) is int and 1 <= number <= 25]
-        complete = result.get("completed_accounts")
-        expected = len(accounts) if accounts else 3
-        verified = result.get("ok") is True and type(complete) is int and complete == expected
-        status = (
-            "Completed"
-            if verified
-            else "Cancelled"
-            if result.get("cancelled")
-            else "Needs attention"
-            if result
-            else "Unfinished or running"
-        )
-        route = result.get("transport") or read(job / "route.json").get("transport")
-        entries.append(
-            {
-                "updated": updated,
-                "status": status,
-                "accounts": accounts,
-                "operation": "Refresh"
-                if request.get("profile_refresh")
-                or "refreshed_accounts" in result
-                or (job / "refresh-request").exists()
-                else "Install",
-                "transport": {"local-wifi": "local Wi-Fi", "remote": "remote tunnel"}.get(
-                    route, ""
-                ),
-            }
-        )
+        entries.append(dict(describe(job), updated=updated))
     return entries

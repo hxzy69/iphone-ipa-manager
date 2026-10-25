@@ -44,8 +44,9 @@ class App:
         if icon.is_file():
             self.icon = tk.PhotoImage(file=icon)
             self.root.iconphoto(True, self.icon)
-        self.root.geometry("1050x930")
-        self.root.minsize(820, 640)
+        from iphone_detector.dialog_ui import size_window
+
+        size_window(self.root, 1050, 850, minimum=(820, 640))
         self.root.configure(bg=BACKGROUND)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self._styles()
@@ -55,20 +56,33 @@ class App:
         self.sync_baseline = fields(self.config)
         self.sync_conflicts = []
         self.last_sync = 0
+        self.live_events = queue.Queue()
+        self.live_loading = False
         self.external_active = False
         self._refresh_device()
+        from iphone_detector.activation_health import ready
+
+        ready("gui")
         self.root.after(150, self.poll)
         try:
             from iphone_detector.job_queue import ensure_started
 
             ensure_started()
         except OSError, ValueError:
-            self.status.set("Queue needs attention; open Dashboard and queue.")
+            self.status.set("Queue needs attention; open Refresh & history.")
 
     def _styles(self):
+        from iphone_detector.dialog_ui import style_window
+
+        style_window(self.root)
         style = ttk.Style(self.root)
         style.theme_use("clam")
         style.configure(".", font=("Segoe UI", 10), background=PANEL, foreground=TEXT)
+        style.configure("TNotebook", background=BACKGROUND, borderwidth=0)
+        style.configure("TNotebook.Tab", padding=(18, 12), background=PANEL, foreground=MUTED)
+        style.map(
+            "TNotebook.Tab", background=[("selected", "#2c414f")], foreground=[("selected", TEXT)]
+        )
         style.configure("TFrame", background=BACKGROUND)
         style.configure("Card.TFrame", background=PANEL)
         style.configure("TLabel", background=BACKGROUND, foreground=TEXT)
@@ -96,9 +110,7 @@ class App:
         style.map("Accent.TButton", background=[("active", "#78e8d2"), ("disabled", "#263d40")])
         style.configure("Stop.TButton", background="#733e43", foreground="#fff1f1")
         style.configure("TCheckbutton", background=BACKGROUND, foreground=MUTED)
-        style.configure(
-            "Treeview", background=PANEL, fieldbackground=PANEL, foreground=TEXT, rowheight=25
-        )
+        style.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=TEXT)
         style.configure("Treeview.Heading", background="#243541", foreground=TEXT)
         style.map("Treeview", background=[("selected", "#2c414f")], foreground=[("selected", TEXT)])
         style.map("TCheckbutton", background=[("active", BACKGROUND)])
@@ -114,44 +126,135 @@ class App:
         return widget
 
     def _build(self):
-        canvas = tk.Canvas(self.root, bg=BACKGROUND, highlightthickness=0)
-        scroll = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=scroll.set)
-        scroll.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-        outer = ttk.Frame(canvas, padding=26)
-        window = canvas.create_window((0, 0), window=outer, anchor="nw")
-        outer.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window, width=event.width))
-        header = ttk.Frame(outer)
-        header.pack(fill="x")
-        ttk.Label(header, text="iPhone IPA Manager", font=("Segoe UI", 23, "bold")).pack(
-            side="left"
-        )
+        shell = ttk.Frame(self.root, padding=(24, 20))
+        shell.pack(fill="both", expand=True)
+        header = ttk.Frame(shell)
+        header.pack(fill="x", pady=(0, 18))
+        brand = ttk.Frame(header)
+        brand.pack(side="left")
+        ttk.Label(brand, text="iPhone IPA Manager", font=("Segoe UI", 23, "bold")).pack(anchor="w")
+        ttk.Label(
+            brand, text="Your apps. Your accounts. One place to manage them.", style="Muted.TLabel"
+        ).pack(anchor="w", pady=(4, 0))
         self.badge = tk.Label(
             header,
             text="READY",
             bg="#203b37",
             fg=ACCENT,
             padx=14,
-            pady=6,
+            pady=7,
             font=("Segoe UI", 9, "bold"),
         )
         self.badge.pack(side="right")
-        ttk.Button(header, text="Discord setup", command=self.open_discord_setup).pack(
-            side="right", padx=12
-        )
-        ttk.Label(
-            outer,
-            text=f"Version {__version__} · Account assignments. Background sideloading. Live settings.",
-            style="Muted.TLabel",
-        ).pack(anchor="w", pady=(3, 17))
-        ttk.Button(outer, text="About and updates", command=self.open_updates).pack(
-            anchor="w", pady=(0, 12)
-        )
-        ttk.Button(outer, text="Dashboard and queue", command=self.open_dashboard).pack(
-            anchor="w", pady=(0, 12)
-        )
+        ttk.Label(header, text=f"v{__version__}", style="Muted.TLabel").pack(side="right", padx=14)
+
+        self.workspace = ttk.Notebook(shell)
+        self.workspace.enable_traversal()
+        self.workspace.pack(fill="both", expand=True)
+        self.page_canvases = []
+        pages = {}
+        for title in ("Overview", "Accounts & apps", "Connections", "Settings"):
+            host = ttk.Frame(self.workspace)
+            self.workspace.add(host, text=title)
+            if title == "Overview":
+                page = ttk.Frame(host, padding=(18, 10))
+                page.pack(fill="both", expand=True)
+                pages[title] = page
+                continue
+            canvas = tk.Canvas(host, bg=BACKGROUND, highlightthickness=0)
+            self.page_canvases.append(canvas)
+            scroll = ttk.Scrollbar(host, orient="vertical", command=canvas.yview)
+            from iphone_detector.dialog_ui import scrollbar_callback
+
+            canvas.configure(yscrollcommand=scrollbar_callback(scroll, canvas))
+            scroll.pack(side="right", fill="y")
+            canvas.pack(side="left", fill="both", expand=True)
+            page = ttk.Frame(canvas, padding=(18, 18))
+            window = canvas.create_window((0, 0), window=page, anchor="nw")
+            page.bind(
+                "<Configure>", lambda event, c=canvas: c.configure(scrollregion=c.bbox("all"))
+            )
+            canvas.bind(
+                "<Configure>",
+                lambda event, c=canvas, w=window: c.itemconfigure(w, width=event.width),
+            )
+            from iphone_detector.dialog_ui import reveal_focus
+
+            self.root.bind(
+                "<FocusIn>",
+                lambda event, c=canvas, p=page: reveal_focus(c, p, event.widget),
+                add="+",
+            )
+            pages[title] = page
+        self.root.bind("<MouseWheel>", self._scroll_page, add="+")
+
+        overview = pages["Overview"]
+        outer = pages["Accounts & apps"]
+        connections = pages["Connections"]
+        preferences = pages["Settings"]
+        for page, title, description in (
+            (
+                overview,
+                "Keep your apps ready to use",
+                "Install replaces apps with your assigned IPAs. Refresh renews existing apps, reinstalling only when needed.",
+            ),
+            (
+                outer,
+                "Choose what each account installs",
+                "Assignments are shared with Discord and automatic renewal after you save.",
+            ),
+            (
+                connections,
+                "Connect your iPhone",
+                "Pair once over USB. Configure Wi-Fi and remote access when you need them.",
+            ),
+            (
+                preferences,
+                "Make it work your way",
+                "Manage renewal, notifications, and transfer preferences.",
+            ),
+        ):
+            ttk.Label(page, text=title, font=("Segoe UI", 17, "bold")).pack(anchor="w")
+            ttk.Label(page, text=description, style="Muted.TLabel", wraplength=680).pack(
+                anchor="w", pady=(5, 10 if page is overview else 18)
+            )
+        shortcuts = ttk.Frame(overview)
+        shortcuts.pack(fill="x", pady=(0, 10))
+        for title, description, command in (
+            (
+                "Refresh & history",
+                "Refresh apps and review queued jobs.",
+                self.open_dashboard,
+            ),
+            (
+                "Discord control",
+                "Manage your apps through a private bot.",
+                self.open_discord_setup,
+            ),
+            (
+                "Help & updates",
+                "Check your version and available updates.",
+                self.open_updates,
+            ),
+        ):
+            column = len(shortcuts.winfo_children())
+            shortcuts.columnconfigure(column, weight=1, uniform="shortcuts")
+            card = ttk.Frame(shortcuts, style="Card.TFrame", padding=10)
+            card.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 8, 0))
+            ttk.Button(card, text=title, command=command).pack(fill="x")
+            description_label = ttk.Label(
+                card, text=description, style="Card.TLabel", wraplength=200
+            )
+            description_label.pack(fill="x", pady=(6, 0))
+            description_label.bind(
+                "<Configure>",
+                lambda event, label=description_label: label.configure(
+                    wraplength=max(100, event.width)
+                ),
+            )
+        account_tools = ttk.Frame(outer)
+        account_tools.pack(fill="x", pady=(0, 12))
+        self._button(account_tools, "Add Apple account", self.open_account_dialog).pack(side="left")
 
         folder_row = ttk.Frame(outer)
         folder_row.pack(fill="x")
@@ -163,15 +266,42 @@ class App:
         self._entry(folder_row, self.folder).pack(side="left", fill="x", expand=True, padx=(0, 8))
         self._button(folder_row, "Browse folder", self.browse_folder).pack(side="right")
         self._button(folder_row, "Import IPA", self.open_ipa_import).pack(side="right", padx=5)
-        setup = ttk.Frame(outer, style="Card.TFrame", padding=14)
-        setup.pack(fill="x", pady=(14, 0))
+        health = ttk.Frame(overview)
+        health.pack(fill="x", pady=(0, 8))
+        self.connection_summary = tk.StringVar(value="Checking remote access…")
+        self.renewal_summary = tk.StringVar(value="Checking renewal schedule…")
+        for column, (title, variable, command) in enumerate(
+            (
+                ("Remote access", self.connection_summary, self.open_remote_setup),
+                ("Automatic renewal", self.renewal_summary, self.open_renewal),
+            )
+        ):
+            health.columnconfigure(column, weight=1, uniform="health")
+            card = ttk.Frame(health, style="Card.TFrame", padding=10)
+            card.grid(row=0, column=column, sticky="nsew", padx=(8 if column else 0, 0))
+            ttk.Button(card, text=title, command=command).pack(anchor="w")
+            label = ttk.Label(card, textvariable=variable, style="Card.TLabel", wraplength=320)
+            label.pack(fill="x", pady=(6, 0))
+            label.bind(
+                "<Configure>",
+                lambda event, label=label: label.configure(wraplength=max(100, event.width)),
+            )
+        self.next_step = tk.StringVar(
+            value="Start in Accounts & apps, then pair your iPhone in Connections."
+        )
+        ttk.Label(overview, textvariable=self.next_step, style="Muted.TLabel", wraplength=700).pack(
+            anchor="w", pady=(0, 8)
+        )
+
+        setup = ttk.Frame(connections, style="Card.TFrame", padding=10)
+        setup.pack(fill="x")
         ttk.Label(
             setup, text="Getting started", style="Card.TLabel", font=("Segoe UI", 11, "bold")
         ).pack(anchor="w")
         ttk.Label(
             setup,
-            text="1. Choose an IPA folder and save settings.   2. Connect and unlock your iPhone; select it below.\n"
-            "3. Add an Apple account and choose an IPA.   4. Check setup, then Run now.",
+            text="1. Choose an IPA folder in Accounts & apps.   2. Pair your iPhone in Connections.\n"
+            "3. Add an Apple account and choose an IPA.   4. Check setup, then Install apps.",
             style="Card.TLabel",
             wraplength=900,
         ).pack(anchor="w", pady=6)
@@ -179,16 +309,32 @@ class App:
         row.pack(fill="x")
         self._button(row, "Add Apple account", self.open_account_dialog).pack(side="left")
         ttk.Button(row, text="Setup guide", command=self.open_guide).pack(side="left", padx=8)
-        self._button(row, "Remote setup", self.open_remote_setup).pack(side="left")
-        self._button(row, "Automatic renewal", self.open_renewal).pack(side="left", padx=8)
+        ttk.Button(row, text="Setup checklist", command=self.open_checklist).pack(
+            side="left", padx=8
+        )
+
+        ttk.Button(connections, text="Remote access setup", command=self.open_remote_setup).pack(
+            anchor="w", pady=12
+        )
+        ttk.Button(preferences, text="Automatic renewal settings", command=self.open_renewal).pack(
+            anchor="w", pady=(0, 16)
+        )
         self.names = []
         self.email_labels = []
         self.account_cards = ttk.Frame(outer)
         self.account_cards.pack(fill="x")
+        self.account_empty = ttk.Label(
+            self.account_cards,
+            text="No accounts yet. Add an Apple account above, then choose its IPA file.",
+            style="Muted.TLabel",
+            wraplength=650,
+        )
+        if not self.accounts:
+            self.account_empty.pack(anchor="w", pady=20)
         for index, account in enumerate(self.accounts):
             self.add_account_card(index, account)
 
-        options = ttk.Frame(outer)
+        options = ttk.Frame(preferences)
         options.pack(fill="x", pady=(0, 10))
         ttk.Label(options, text="Timeout / account").pack(side="left")
         self.timeout = tk.StringVar(value=str(round(automation.get("install_timeout", 900) / 60)))
@@ -201,15 +347,19 @@ class App:
         check.pack(side="right")
         self.editable.append(check)
 
-        device = ttk.Frame(outer)
+        device = ttk.Frame(connections)
         device.pack(fill="x", pady=(0, 10))
         self.device_label = ttk.Label(device, style="Muted.TLabel")
-        self.device_label.pack(side="left")
+        self.device_label.pack(side="left", fill="x", expand=True)
+        self.device_label.bind(
+            "<Configure>",
+            lambda event: self.device_label.configure(wraplength=max(120, event.width)),
+        )
         self._button(device, "Pair connected iPhone", lambda: self.start("devices")).pack(
-            side="right"
+            side="right", before=self.device_label
         )
 
-        actions = ttk.Frame(outer)
+        actions = ttk.Frame(shell, padding=(0, 12, 0, 0))
         actions.pack(fill="x")
         self._button(actions, "Save settings", self.save).pack(side="left", padx=(0, 7))
         self._button(actions, "Reload saved", lambda: self.sync_saved(force=True)).pack(
@@ -218,17 +368,17 @@ class App:
         self._button(actions, "Check setup", lambda: self.start("check")).pack(
             side="left", padx=(0, 7)
         )
-        self._button(actions, "Watch USB", lambda: self.start("watch")).pack(
-            side="left", padx=(0, 7)
+        self._button(connections, "Watch for USB connection", lambda: self.start("watch")).pack(
+            anchor="w", pady=(8, 0)
         )
-        self._button(actions, "Run now", lambda: self.start("run"), style="Accent.TButton").pack(
-            side="left"
-        )
+        self._button(
+            actions, "Install apps", lambda: self.start("run"), style="Accent.TButton"
+        ).pack(side="left")
         self.stop_button = ttk.Button(
             actions, text="Stop", command=self.stop, style="Stop.TButton", state="disabled"
         )
         self.stop_button.pack(side="right")
-        wireless = ttk.Frame(outer)
+        wireless = ttk.Frame(connections)
         wireless.pack(fill="x", pady=(8, 0))
         self._button(wireless, "Check Wi-Fi", lambda: self.start("wifi-check")).pack(
             side="left", padx=(0, 7)
@@ -241,12 +391,12 @@ class App:
         fast.pack(side="left", padx=(0, 12))
         self.editable.append(fast)
         ttk.Label(
-            wireless,
+            connections,
             text="USB pairing first. Uses the installed Wi-Fi service; no administrator prompts.",
             style="Muted.TLabel",
-            wraplength=350,
-        ).pack(side="left")
-        background = ttk.Frame(outer)
+            wraplength=650,
+        ).pack(anchor="w", pady=12)
+        background = ttk.Frame(preferences)
         background.pack(fill="x", pady=(7, 0))
         self.notify_finish = tk.BooleanVar(value=automation.get("notify_on_finish", True))
         for title, variable in [("Windows notification when finished", self.notify_finish)]:
@@ -258,16 +408,20 @@ class App:
             if not self.accounts
             else "Choose a new IPA or edit its filename, then save."
         )
-        ttk.Label(outer, textvariable=self.status, style="Muted.TLabel", wraplength=950).pack(
-            anchor="w", pady=(11, 7)
+        status_label = ttk.Label(shell, textvariable=self.status, style="Muted.TLabel")
+        status_label.pack(fill="x", pady=(11, 7))
+        status_label.bind(
+            "<Configure>", lambda event: status_label.configure(wraplength=max(200, event.width))
         )
         self.sync_status = tk.StringVar(value="Live sync enabled.")
-        ttk.Label(outer, textvariable=self.sync_status, style="Muted.TLabel", wraplength=950).pack(
-            anchor="w", pady=(0, 5)
+        sync_label = ttk.Label(shell, textvariable=self.sync_status, style="Muted.TLabel")
+        sync_label.pack(fill="x", pady=(0, 5))
+        sync_label.bind(
+            "<Configure>", lambda event: sync_label.configure(wraplength=max(200, event.width))
         )
         self.activity = tk.Text(
-            outer,
-            height=6,
+            overview,
+            height=2,
             bg="#0b1219",
             fg="#c4d4df",
             relief="flat",
@@ -278,7 +432,7 @@ class App:
             wrap="word",
         )
         self.activity.pack(fill="both", expand=True)
-        footer = ttk.Frame(outer)
+        footer = ttk.Frame(preferences)
         footer.pack(fill="x", pady=(7, 0))
         ttk.Button(
             footer,
@@ -291,10 +445,31 @@ class App:
             command=lambda: self.open_folder(CONFIG_PATH.parent),
         ).pack(side="left", padx=7)
         ttk.Label(
-            footer, text="Stop requests safe cancellation of the active job.", style="Muted.TLabel"
-        ).pack(side="right")
+            preferences,
+            text="Stop requests safe cancellation of the active job.",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=12)
+
+    def _scroll_page(self, event):
+        """Scroll the page under the pointer without stealing text-widget scrolling."""
+        widget = event.widget
+        if isinstance(widget, (tk.Text, ttk.Combobox, ttk.Spinbox)):
+            return
+        while widget is not None:
+            if widget in self.page_canvases:
+                bounds = widget.bbox("all")
+                if bounds and bounds[3] > widget.winfo_height():
+                    units = int(event.delta / 120) or (
+                        1 if event.delta > 0 else -1 if event.delta < 0 else 0
+                    )
+                    widget.yview_scroll(-units, "units")
+                return
+            widget = getattr(widget, "master", None)
 
     def add_account_card(self, index, account):
+        empty = getattr(self, "account_empty", None)
+        if empty is not None:
+            empty.pack_forget()
         card = ttk.Frame(self.account_cards, style="Card.TFrame", padding=(15, 11))
         card.pack(fill="x", pady=(10, 0))
         line = ttk.Frame(card, style="Card.TFrame")
@@ -303,7 +478,10 @@ class App:
             line, text="ACCOUNT %d" % (index + 1), style="Card.TLabel", font=("Segoe UI", 9, "bold")
         ).pack(side="left")
         email_label = ttk.Label(line, text=account["email"], style="Card.TLabel", foreground=MUTED)
-        email_label.pack(side="right")
+        email_label.pack(side="left", fill="x", expand=True, padx=(12, 0))
+        email_label.bind(
+            "<Configure>", lambda event: email_label.configure(wraplength=max(120, event.width))
+        )
         self.email_labels.append(email_label)
         fields = ttk.Frame(card, style="Card.TFrame")
         fields.pack(fill="x", pady=(7, 0))
@@ -317,8 +495,18 @@ class App:
         self.device_label.configure(
             text=("Selected: %s  ·  %s" % (device.get("name", "iPhone"), device["serial"]))
             if device.get("serial")
-            else "No iPhone selected. Connect by USB and select it below."
+            else "No iPhone selected. Connect by USB, then choose Pair connected iPhone."
         )
+        if hasattr(self, "next_step"):
+            if not self.accounts:
+                hint = "Next: add an Apple account in Accounts & apps, then assign an IPA."
+            elif not device.get("serial"):
+                hint = "Next: open Connections to pair your iPhone over USB."
+            else:
+                name = str(device.get("name", "iPhone"))
+                display_name = name if len(name) <= 50 else name[:47] + "…"
+                hint = f"{display_name} selected · {len(self.accounts)} account(s). Check setup before your first install."
+            self.next_step.set(hint)
 
     def sync_variables(self):
         result = {
@@ -365,42 +553,74 @@ class App:
         return conflicts
 
     def sync_live(self):
-        if time.monotonic() - self.last_sync < 1:
-            return
-        self.last_sync = time.monotonic()
         try:
-            self.sync_saved()
-            from iphone_detector import auto_refresh, remote_tunnel
-            from iphone_detector.worker_registry import active_jobs
+            latest, active, detail, connection, renewal, error = self.live_events.get_nowait()
+        except queue.Empty:
+            if self.live_loading or time.monotonic() - self.last_sync < 1:
+                return
+            self.last_sync = time.monotonic()
+            self.live_loading = True
+            events = self.live_events
 
-            active = active_jobs(DATA_ROOT)
-            detail = "No active run."
-            if active:
-                from iphone_detector.discord_bot import Controller
+            def collect():
+                try:
+                    from iphone_detector import auto_refresh, remote_tunnel
+                    from iphone_detector.worker_registry import active_jobs
+                    from iphone_detector.discord_bot import Controller
 
-                progress = Controller()
-                progress.job = active[0]["job"]
-                progress.expected = len(active[0]["accounts"])
-                progress.state = "Preparing background run."
-                progress.accounts = (
-                    [number - 1 for number in active[0]["accounts"]]
-                    if len(active[0]["accounts"]) < len(self.accounts)
-                    else None
-                )
-                detail = "Active: %s. %s" % (active[0]["mode"], progress.progress())
+                    latest = load_config() or {}
+                    active = active_jobs(DATA_ROOT)
+                    detail = "No active run."
+                    if active:
+                        progress = Controller()
+                        progress.job = active[0]["job"]
+                        progress.expected = len(active[0]["accounts"])
+                        progress.state = "Preparing background run."
+                        progress.accounts = (
+                            [number - 1 for number in active[0]["accounts"]]
+                            if len(active[0]["accounts"]) < len(get_workflow(latest))
+                            else None
+                        )
+                        detail = "Active: %s. %s" % (active[0]["mode"], progress.progress())
+                    events.put(
+                        (
+                            latest,
+                            active,
+                            detail,
+                            remote_tunnel.describe(),
+                            auto_refresh.describe(),
+                            None,
+                        )
+                    )
+                except (OSError, ValueError, TypeError, KeyError) as exc:
+                    events.put((None, None, None, None, None, str(exc)[:160]))
+
+            threading.Thread(target=collect, daemon=True).start()
+            return
+        self.live_loading = False
+        try:
+            if error:
+                raise ValueError(error)
+            self.sync_saved(latest=latest)
             from iphone_detector.gui_sync import conflict_names
 
+            dirty = any(
+                variable.get() != self.sync_baseline.get(key)
+                for key, variable in self.sync_variables().items()
+            )
             prefix = (
                 (
                     "Conflicting saved changes: %s. Use Reload saved to accept saved values. "
                     % conflict_names(self.sync_conflicts)
                 )
                 if self.sync_conflicts
-                else "Live sync active; unsaved edits stay local. "
+                else "Unsaved changes — choose Save settings to share them with Discord. "
+                if dirty
+                else "Saved settings are up to date. "
             )
-            self.sync_status.set(
-                prefix + detail + " " + remote_tunnel.describe() + " " + auto_refresh.describe()
-            )
+            self.sync_status.set(prefix + detail)
+            self.connection_summary.set(connection)
+            self.renewal_summary.set(renewal)
             if self.process is None:
                 self.stop_button.configure(state="normal" if active else "disabled")
                 if active:
@@ -409,14 +629,101 @@ class App:
                     self.badge.configure(text="READY", fg=ACCENT, bg="#203b37")
                 self.external_active = bool(active)
         except (OSError, ValueError, TypeError, KeyError) as exc:
+            self.connection_summary.set("Status unavailable. Open Connections and check setup.")
+            self.renewal_summary.set("Schedule could not be verified. Open renewal settings.")
             self.sync_status.set(
                 "Live sync unavailable; unsaved edits are preserved. " + str(exc)[:160]
             )
 
-    def open_discord_setup(self):
-        from iphone_detector.discord_bot import command
+    def open_checklist(self):
+        from iphone_detector.readiness import inspect, format_report
 
-        subprocess.Popen(command(["--discord-setup"]), creationflags=subprocess.CREATE_NO_WINDOW)
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Setup and recovery checklist")
+        dialog.geometry(
+            "%dx%d"
+            % (
+                min(760, self.root.winfo_screenwidth() - 60),
+                min(680, self.root.winfo_screenheight() - 100),
+            )
+        )
+        from iphone_detector.dialog_ui import shell
+
+        frame, footer = shell(
+            dialog,
+            "Setup & recovery checklist",
+            "Read-only checks: identify missing setup before installing apps.",
+            height=650,
+        )
+        text = tk.Text(
+            frame,
+            height=18,
+            wrap="word",
+            font=("Segoe UI", 10),
+            padx=10,
+            pady=10,
+            bg=PANEL,
+            fg=TEXT,
+            relief="flat",
+        )
+        scroll = ttk.Scrollbar(frame, command=text.yview)
+        text.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        text.pack(fill="both", expand=True)
+        results = queue.Queue()
+
+        def poll():
+            if not dialog.winfo_exists():
+                return
+            try:
+                value = results.get_nowait()
+            except queue.Empty:
+                dialog.after(100, poll)
+                return
+            text.configure(state="normal")
+            text.delete("1.0", "end")
+            text.insert("end", value)
+            text.configure(state="disabled")
+            refresh.configure(state="normal")
+
+        def load():
+            if getattr(self, "preview", False):
+                text.configure(state="normal")
+                text.delete("1.0", "end")
+                text.insert(
+                    "end",
+                    "SAMPLE CHECKLIST — no device checks performed\n\nReady · IPA folder configured\nReady · Three accounts assigned\nReady · iPhone pairing saved\nReady · Remote tunnel available\n\nIf a check needs attention, fix it before starting an install.",
+                )
+                text.configure(state="disabled")
+                return
+            refresh.configure(state="disabled")
+
+            def collect():
+                try:
+                    results.put(format_report(inspect()))
+                except Exception:
+                    results.put(
+                        "The checklist could not finish. Save a support report from About and updates."
+                    )
+
+            threading.Thread(target=collect, daemon=True).start()
+            dialog.after(100, poll)
+
+        refresh = ttk.Button(footer, text="Refresh checklist", command=load)
+        refresh.pack(anchor="w", pady=8)
+        load()
+
+    def open_discord_setup(self):
+        from iphone_detector.discord_setup import launch
+
+        existing = getattr(self, "discord_dialog", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        try:
+            self.discord_dialog = launch(self.root, preview=getattr(self, "preview", False))
+        except (OSError, ValueError, TypeError) as exc:
+            messagebox.showerror("Discord settings need attention", str(exc), parent=self.root)
 
     def open_guide(self):
         from iphone_detector.paths import ASSET_ROOT
@@ -432,7 +739,7 @@ class App:
             def saved(number):
                 self.sync_saved(force=True)
                 self.status.set(
-                    "Account %d added. Check setup, then Run now to install its IPA." % number
+                    "Account %d added. Check setup, then Install apps to install its IPA." % number
                 )
 
             self.account_dialog = AccountDialog(self.root, self.config, saved)
@@ -440,26 +747,14 @@ class App:
             messagebox.showerror("Account setup", str(exc), parent=self.root)
 
     def open_renewal(self):
-        from iphone_detector import auto_refresh
+        from iphone_detector.renewal_dialog import RenewalDialog
 
-        enabled = auto_refresh.read(auto_refresh.CONFIG).get("enabled", False)
-        if not enabled and not self.accounts:
-            messagebox.showinfo(
-                "Add an account first",
-                "Install an account before enabling renewal.",
-                parent=self.root,
-            )
-            return
-        try:
-            auto_refresh.configure(not enabled)
-            self.status.set(auto_refresh.describe())
-        except (ValueError, RuntimeError, OSError) as exc:
-            messagebox.showerror("Automatic renewal", str(exc), parent=self.root)
+        self.renewal_dialog = RenewalDialog(self.root, preview=getattr(self, "preview", False))
 
     def open_remote_setup(self):
         from iphone_detector.remote_dialog import RemoteDialog
 
-        self.remote_dialog = RemoteDialog(self.root)
+        self.remote_dialog = RemoteDialog(self.root, preview=getattr(self, "preview", False))
 
     def browse_folder(self):
         path = filedialog.askdirectory(
@@ -472,7 +767,7 @@ class App:
 
     def open_ipa_import(self):
         """Optionally import a file from another folder into the managed IPA folder."""
-        from iphone_detector.ipa_inbox import import_ipa
+        from iphone_detector.ipa_inbox import import_assignment
 
         if not self.accounts:
             messagebox.showinfo(
@@ -486,28 +781,53 @@ class App:
         dialog.geometry("700x420")
         dialog.transient(self.root)
         dialog.grab_set()
+        from iphone_detector.dialog_ui import shell
+
+        body, footer = shell(
+            dialog,
+            "Import & assign an IPA",
+            "Choose a completed file, then select the account that will manage it. Importing does not install the app.",
+            width=760,
+            height=610,
+        )
         inbox = tk.StringVar(
             value=self.config.get("automation", {}).get(
                 "import_directory", str(Path.home() / "Downloads")
             )
         )
-        row = ttk.Frame(dialog, padding=12)
+        row = ttk.Frame(body, padding=(0, 8))
         row.pack(fill="x")
         ttk.Label(row, text="Source folder").pack(anchor="w")
         ttk.Entry(row, textvariable=inbox).pack(fill="x")
 
         def choose_folder():
+            if getattr(self, "preview", False):
+                return
             selected = filedialog.askdirectory(parent=dialog, initialdir=inbox.get())
             if selected:
                 inbox.set(selected)
                 refresh()
 
         ttk.Button(row, text="Choose source folder", command=choose_folder).pack(anchor="w")
-        files = tk.Listbox(dialog, exportselection=False)
+        files = tk.Listbox(
+            body,
+            height=7,
+            exportselection=False,
+            bg=PANEL,
+            fg=TEXT,
+            selectbackground="#2c414f",
+            relief="flat",
+        )
         files.pack(fill="both", expand=True, padx=12)
         paths = []
 
         def refresh():
+            if getattr(self, "preview", False):
+                if not paths:
+                    paths.extend([Path("Sample Video.ipa"), Path("Sample Music.ipa")])
+                    for path in paths:
+                        files.insert("end", path.name)
+                return
             selected = files.get(files.curselection()[0]) if files.curselection() else None
             try:
                 found = sorted(
@@ -530,16 +850,40 @@ class App:
                     if path.name == selected:
                         files.selection_set(i)
 
-        account = tk.IntVar(value=0)
-        for index, entry in enumerate(self.accounts):
-            ttk.Radiobutton(
-                dialog,
-                text="Account %d — %s" % (index + 1, entry["email"]),
-                variable=account,
-                value=index,
-            ).pack(anchor="w", padx=12)
+        ttk.Label(body, text="Assign to account").pack(anchor="w", pady=(12, 4))
+        account = ttk.Combobox(
+            body,
+            state="readonly",
+            values=[
+                "Account %d — %s" % (index + 1, entry["email"])
+                for index, entry in enumerate(self.accounts)
+            ],
+        )
+        account.pack(fill="x")
+        account.current(0)
+
+        import_events = queue.Queue()
+        import_cancelled = threading.Event()
+        importing = [False]
+
+        def close_import():
+            import_cancelled.set()
+            dialog.destroy()
+
+        dialog.protocol("WM_DELETE_WINDOW", close_import)
+        dialog.bind("<Escape>", lambda event: close_import())
+        import_status = tk.StringVar(value="Choose a completed IPA to import.")
+        ttk.Label(body, textvariable=import_status, wraplength=650).pack(anchor="w", pady=10)
+        for child in footer.winfo_children():
+            if isinstance(child, ttk.Button):
+                child.configure(command=close_import)
 
         def assign():
+            if getattr(self, "preview", False):
+                import_status.set("Sample assignment only. No file was copied or settings changed.")
+                return
+            if importing[0]:
+                return
             if not files.curselection():
                 messagebox.showinfo(
                     "Select an IPA",
@@ -547,26 +891,66 @@ class App:
                     parent=dialog,
                 )
                 return
+            source = paths[files.curselection()[0]]
+            chosen = account.current()
+            if not self.save():
+                return
+            folder = self.folder.get()
+            chosen_account = self.accounts[chosen].copy()
+            source_folder = inbox.get()
             try:
-                # Reload persisted settings so other controller changes survive.
-                self.config = load_config() or self.config
-                target = import_ipa(paths[files.curselection()[0]], self.folder.get())
-                previous = self.names[account.get()].get()
-                self.names[account.get()].set(target.name)
-                self.config.setdefault("automation", {})["import_directory"] = inbox.get()
-                if not self.save():
-                    self.names[account.get()].set(previous)
+                stat = source.stat()
+                signature = (stat.st_size, stat.st_mtime_ns)
+            except OSError:
+                import_status.set("The source file disappeared. Select a completed IPA again.")
+                return
+            importing[0] = True
+            import_status.set("Copying and verifying IPA…")
+
+            def copy():
+                try:
+                    target = import_assignment(
+                        source,
+                        folder,
+                        chosen,
+                        chosen_account,
+                        signature,
+                        source_directory=source_folder,
+                        cancelled=import_cancelled,
+                    )
+                    import_events.put((target, None))
+                except (OSError, ValueError, RuntimeError) as exc:
+                    import_events.put((None, str(exc)))
+
+            threading.Thread(target=copy, daemon=True).start()
+
+            def finish():
+                if not dialog.winfo_exists():
+                    return
+                try:
+                    target, error = import_events.get_nowait()
+                except queue.Empty:
+                    dialog.after(100, finish)
+                    return
+                importing[0] = False
+                if error:
+                    import_status.set(error)
+                    return
+                try:
+                    self.sync_saved()
+                except OSError, ValueError:
+                    import_status.set(
+                        "The IPA assignment was saved. Reopen the app to reload settings; the imported file was preserved."
+                    )
                     return
                 self.status.set(
-                    "IPA imported for account %d. Run sideload to install it." % (account.get() + 1)
+                    "IPA imported for account %d. Run sideload to install it." % (chosen + 1)
                 )
                 dialog.destroy()
-            except (OSError, ValueError, RuntimeError) as exc:
-                messagebox.showerror("Import failed", str(exc), parent=dialog)
 
-        ttk.Button(dialog, text="Import and assign to selected account", command=assign).pack(
-            pady=10
-        )
+            dialog.after(100, finish)
+
+        ttk.Button(footer, text="Import and assign", command=assign).pack(side="left")
 
         def poll_inbox():
             if dialog.winfo_exists():
@@ -622,7 +1006,11 @@ class App:
             self.accounts = get_workflow(updated)
             from iphone_detector.gui_sync import fields
 
-            self.sync_baseline = fields(updated)
+            saved_fields = fields(updated)
+            variables = self.sync_variables()
+            for key, value in saved_fields.items():
+                variables[key].set(value)
+            self.sync_baseline = saved_fields
             self.sync_conflicts = []
             self.status.set("Saved. New filenames will be used on the next run.")
             return True
@@ -730,6 +1118,9 @@ class App:
     def _read_log(self):
         log = self.job / "activity.log"
         if log.exists():
+            if log.stat().st_size < self.log_offset:
+                self.log_offset = 0
+                self.decoder.reset()
             with log.open("rb") as handle:
                 handle.seek(self.log_offset)
                 data = handle.read(128 * 1024)
@@ -811,7 +1202,7 @@ class App:
         if previous is not None and previous.window.winfo_exists():
             previous.window.lift()
         else:
-            self.management = ManagementDialog(self)
+            self.management = ManagementDialog(self, preview=getattr(self, "preview", False))
 
     def open_updates(self):
         from iphone_detector.updates import UpdateError, check_updates
@@ -824,8 +1215,15 @@ class App:
         dialog.title("About and updates")
         dialog.transient(self.root)
         dialog.configure(bg=BACKGROUND)
-        frame = ttk.Frame(dialog, padding=22)
-        frame.pack(fill="both", expand=True)
+        from iphone_detector.dialog_ui import shell, section
+
+        frame, _ = shell(
+            dialog,
+            "About & updates",
+            "Review the version, install verified updates, or collect a support report.",
+            width=700,
+            height=730,
+        )
         ttk.Label(
             frame, text=f"iPhone IPA Manager {__version__}", font=("Segoe UI", 16, "bold")
         ).pack(anchor="w")
@@ -837,7 +1235,7 @@ class App:
         from iphone_detector.guided_update import STATE
         from iphone_detector.job_history import read
 
-        previous_update = read(STATE)
+        previous_update = {} if getattr(self, "preview", False) else read(STATE)
         status = tk.StringVar(
             value=previous_update.get(
                 "message", "Check the official GitHub repository for a newer release."
@@ -854,6 +1252,7 @@ class App:
             wraplength=520,
         ).pack(anchor="w", pady=12)
         results = queue.Queue()
+        section(frame, "1. Find a release")
         release_button = ttk.Button(frame, text="Open release and downloads", state="disabled")
         release_button.pack(anchor="w", pady=8)
 
@@ -885,6 +1284,11 @@ class App:
                     prepare_button.configure(state="normal", command=lambda: prepare(release))
 
         def start_check():
+            if getattr(self, "preview", False):
+                status.set(
+                    "Sample result: you are viewing the design preview. No update check was sent."
+                )
+                return
             check.configure(state="disabled")
             release_button.configure(state="disabled")
             status.set("Checking GitHub…")
@@ -893,8 +1297,14 @@ class App:
 
         check = ttk.Button(frame, text="Check for updates", command=start_check)
         check.pack(anchor="w", pady=8)
+        section(frame, "2. Download and verify", "Available after a newer release is found.")
         prepare_button = ttk.Button(frame, text="Download and verify update", state="disabled")
         prepare_button.pack(anchor="w", pady=8)
+        section(
+            frame,
+            "3. Activate when idle",
+            "Save your work first. Background components will restart.",
+        )
         activate_button = ttk.Button(frame, text="Activate prepared update", state="disabled")
         activate_button.pack(anchor="w", pady=8)
         prepared = queue.Queue()
@@ -966,7 +1376,7 @@ class App:
 
         from iphone_detector.guided_update import PREVIOUS
 
-        if PREVIOUS.is_file() and FROZEN:
+        if not getattr(self, "preview", False) and PREVIOUS.is_file() and FROZEN:
             ttk.Button(
                 frame, text="Roll back to previous executable", command=lambda: activate(PREVIOUS)
             ).pack(anchor="w", pady=8)
@@ -1033,14 +1443,24 @@ class App:
             dialog.title("Choose your iPhone")
             dialog.transient(self.root)
             dialog.grab_set()
+            from iphone_detector.dialog_ui import shell
+
+            body, _ = shell(
+                dialog,
+                "Choose your iPhone",
+                "Select the phone to use for installs and renewal. Approve Trust on the phone if prompted.",
+                width=700,
+                height=450,
+            )
             for device in devices:
 
                 def select(value=device):
-                    save_device(value)
+                    if not getattr(self, "preview", False):
+                        save_device(value)
                     dialog.destroy()
 
                 ttk.Button(
-                    dialog, text="%s · %s" % (device["name"], device["serial"]), command=select
+                    body, text="%s · %s" % (device["name"], device["serial"]), command=select
                 ).pack(fill="x", padx=15, pady=8)
 
     def close(self):
@@ -1074,9 +1494,25 @@ def launch():
             App(root)
         except ValueError as exc:
             root.withdraw()
-            messagebox.showerror("Settings need repair", str(exc), parent=root)
-            root.destroy()
-            return 1
+            from iphone_detector.maintenance import quarantine_invalid_config
+
+            if messagebox.askyesno(
+                "Settings need repair",
+                str(exc)
+                + "\n\nPreserve the unreadable settings in a local backup and open a fresh setup? Device pairing and saved credentials will be kept.",
+                parent=root,
+            ):
+                try:
+                    quarantine_invalid_config()
+                    root.deiconify()
+                    App(root)
+                except (OSError, ValueError) as repair_error:
+                    messagebox.showerror("Repair unavailable", str(repair_error), parent=root)
+                    root.destroy()
+                    return 1
+            else:
+                root.destroy()
+                return 1
         root.mainloop()
     finally:
         if mutex:

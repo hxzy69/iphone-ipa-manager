@@ -61,7 +61,7 @@ def managed_files(config):
     return sorted(files, key=lambda path: path.stat().st_mtime, reverse=True)
 
 
-def _apply_assignment(account, source, signature, save, listing):
+def _apply_assignment(account, source, signature, save, listing, expected_email=None):
     """Shared validation: account range, exact file identity, then the caller's save step."""
     from iphone_detector.config import load_config
     from iphone_detector.settings import get_workflow
@@ -70,6 +70,8 @@ def _apply_assignment(account, source, signature, save, listing):
     workflow = get_workflow(config)
     if type(account) is not int or account not in range(len(workflow)):
         raise ValueError("Choose one of the configured account numbers.")
+    if expected_email is not None and workflow[account]["email"] != expected_email:
+        raise ValueError("The selected Apple account changed. Open /inbox or /assign again.")
     source = Path(source)
     if source not in listing(config):
         raise ValueError("This file is no longer in its folder. Open /inbox or /assign again.")
@@ -81,7 +83,7 @@ def _apply_assignment(account, source, signature, save, listing):
     return save(config, workflow, source)
 
 
-def assign_received(source, signature, account):
+def assign_received(source, signature, account, *, expected_email=None):
     """Serialize against installations; never trust Discord-supplied filesystem paths."""
     from iphone_detector.config import save_config
     from iphone_detector.run_lock import RunLock
@@ -108,7 +110,7 @@ def assign_received(source, signature, account):
             save_config(config)
             return destination
 
-        return _apply_assignment(account, source, signature, save, received_files)
+        return _apply_assignment(account, source, signature, save, received_files, expected_email)
     except Exception:
         if destination is not None:
             destination.unlink(missing_ok=True)
@@ -117,7 +119,7 @@ def assign_received(source, signature, account):
         lock.close()
 
 
-def assign_managed(source, signature, account):
+def assign_managed(source, signature, account, *, expected_email=None):
     """Point an account at an IPA already in the managed folder; nothing is copied."""
     from iphone_detector.config import save_config
     from iphone_detector.ipa_inbox import validate_ipa
@@ -146,7 +148,7 @@ def assign_managed(source, signature, account):
             save_config(config)
             return source
 
-        return _apply_assignment(account, source, signature, save, managed_files)
+        return _apply_assignment(account, source, signature, save, managed_files, expected_email)
     finally:
         lock.close()
 
@@ -228,7 +230,12 @@ def create_view(
                 from iphone_detector.config import load_config
                 from iphone_detector.settings import get_workflow
 
-                if get_workflow(load_config() or {})[self.index]["ipa"] != self.expected_ipa:
+                workflow = get_workflow(load_config() or {})
+                if (
+                    self.index >= len(workflow)
+                    or workflow[self.index]["ipa"] != self.expected_ipa
+                    or workflow[self.index]["email"] != self.expected_email
+                ):
                     await interaction.response.send_message(
                         "This account’s IPA assignment changed. Open /inbox or /assign again.",
                         ephemeral=True,
@@ -348,14 +355,20 @@ def create_view(
                     content="Validating the IPA and saving its account…", view=self
                 )
                 try:
+                    options = (
+                        {"expected_email": account_emails[account]}
+                        if importer in (None, assign_received, assign_managed)
+                        else {}
+                    )
                     destination = await asyncio.to_thread(
-                        importer or assign_received, source, signature, account
+                        importer or assign_received, source, signature, account, **options
                     )
                     self.confirmed = True
                     self.stop()
                     install_view = InstallNowView(account) if install_account else None
                     if install_view is not None:
                         install_view.expected_ipa = destination.stem
+                        install_view.expected_email = account_emails[account]
                     await interaction.edit_original_response(
                         content=(
                             saved_text % (discord.utils.escape_markdown(source.name), account + 1)
@@ -368,15 +381,20 @@ def create_view(
 
                     logging.getLogger(__name__).exception("Discord IPA import failed")
                     text = (
-                        str(exc)
-                        if isinstance(exc, (ValueError, RuntimeError))
-                        else "Import failed. Check the local log."
+                        "The assignment was saved, but its confirmation could not be displayed. Use /accounts to check it before installing."
+                        if self.confirmed
+                        else (
+                            str(exc)
+                            if isinstance(exc, (ValueError, RuntimeError))
+                            else "Import failed. Check the local log."
+                        )
                     )
                     self.busy = False
-                    self.render()
+                    if not self.confirmed:
+                        self.render()
                     await interaction.edit_original_response(
                         content=text[:1000],
-                        view=self,
+                        view=None if self.confirmed else self,
                         allowed_mentions=discord.AllowedMentions.none(),
                     )
 

@@ -1,5 +1,6 @@
 from fixtures import configured
 import copy
+import queue
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,6 +12,63 @@ from iphone_detector.gui import App
 
 
 class GuiSyncTests(unittest.TestCase):
+    def test_live_summary_preserves_unsaved_edits_and_reports_save_status(self):
+        app, config = self.app()
+        app.process = None
+        app.external_active = False
+        app.stop_button = Mock()
+        app.sync_status = Mock()
+        app.connection_summary = Mock()
+        app.renewal_summary = Mock()
+        app.live_events = queue.Queue()
+        app.timeout.set("20")
+        app.live_events.put(
+            (config, [], "No active run.", "Remote tunnel ready.", "Due tomorrow.", None)
+        )
+        app.sync_live()
+        self.assertEqual(app.timeout.get(), "20")
+        self.assertIn("Unsaved changes", app.sync_status.set.call_args.args[0])
+        app.connection_summary.set.assert_called_with("Remote tunnel ready.")
+        app.renewal_summary.set.assert_called_with("Due tomorrow.")
+        app.timeout.set(app.sync_baseline["timeout"])
+        app.live_events.put(
+            (config, [], "No active run.", "Remote tunnel ready.", "Due tomorrow.", None)
+        )
+        app.sync_live()
+        self.assertIn("up to date", app.sync_status.set.call_args.args[0])
+
+    def test_live_summary_does_not_keep_stale_ready_state_after_read_failure(self):
+        app, _ = self.app()
+        app.live_events = queue.Queue()
+        app.sync_status = Mock()
+        app.connection_summary = Mock()
+        app.renewal_summary = Mock()
+        app.live_events.put((None, None, None, None, None, "Unable to read state"))
+        app.sync_live()
+        self.assertIn("unavailable", app.connection_summary.set.call_args.args[0])
+        self.assertIn("could not be verified", app.renewal_summary.set.call_args.args[0])
+
+    def test_successful_save_normalizes_widgets_and_baseline_to_persisted_values(self):
+        app, initial = self.app()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "child").mkdir()
+            current = copy.deepcopy(initial)
+            current["automation"]["ipa_directory"] = str(root)
+            app.sync_saved(force=True, latest=current)
+            app.folder.set(str(root / "child" / ".."))
+            app.names[0].set(" SampleVideo 1.0.IPA ")
+            with (
+                patch("iphone_detector.gui.load_config", return_value=current),
+                patch("iphone_detector.gui.save_config") as saved,
+            ):
+                self.assertTrue(app.save())
+            expected = fields(saved.call_args.args[0])
+            self.assertEqual(
+                {key: value.get() for key, value in app.sync_variables().items()}, expected
+            )
+            self.assertEqual(app.sync_baseline, expected)
+
     def test_clean_fields_follow_saved_changes_while_edits_stay_local(self):
         baseline = {"folder": "old", "timeout": "15", "notify": True}
         local = dict(baseline, timeout="20")

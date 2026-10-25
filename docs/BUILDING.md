@@ -81,7 +81,7 @@ The native Cargo manifest patches `apple-codesign-quick` to the accompanying
 `tools/build.ps1` command (without `-SkipNative`) to compile and relink it into the
 native helper and package the application. The exact application sources,
 `Cargo.lock`, GPL transport sources, and build scripts accompany the Windows
-release in `source/iPhoneIPAManager-0.1.1-source.zip`. No signature or application
+release in `source/iPhoneIPAManager-<version>-source.zip`. No signature or application
 check prevents using a modified, rebuilt helper.
 
 
@@ -101,3 +101,16 @@ all three files from this project's GitHub release.
 Packaging also rejects stale self-test receipts before creating archives. The
 archive version comes from `pyproject.toml`, and verification runs automatically
 after packaging.
+
+For commercial-release acceptance, run the Windows lifecycle smoke test and
+candidate evidence checker described in [COMMERCIAL_RELEASE.md](COMMERCIAL_RELEASE.md).
+These checks retain explicit failures for missing signatures and uncompleted
+device or clean-machine acceptance.
+
+`python tools/smoke_isolation.py dist/iPhoneIPAManager.exe --report artifacts/isolation-acceptance.json`
+runs the EXE from an empty working folder with fresh app data, a system-only PATH
+and deliberately unusable ambient Python settings. It checks the packaged runtime
+and native authentication input validation without reaching a phone or Apple.
+Passing this developer-host test does not replace clean-Windows acceptance.
+Bundled helper programs inherit the frozen application's library search environment;
+see the [PyInstaller subprocess documentation](https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#launching-external-programs-from-the-frozen-application).

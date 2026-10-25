@@ -1,3 +1,4 @@
+from fixtures import write_sample_app
 from fixtures import configured
 import asyncio
 import tempfile
@@ -39,7 +40,7 @@ class DiscordInboxTests(unittest.TestCase):
             root = Path(directory)
             source = root / "Managed.ipa"
             with zipfile.ZipFile(source, "w") as archive:
-                archive.writestr("Payload/Example.app/Info.plist", b"plist")
+                write_sample_app(archive, "Payload/Example.app/Info.plist")
             config = configured(
                 {
                     "automation": {
@@ -85,7 +86,7 @@ class DiscordInboxTests(unittest.TestCase):
             root = Path(directory)
             source = root / "Received.ipa"
             with zipfile.ZipFile(source, "w") as archive:
-                archive.writestr("Payload/Example.app/Info.plist", b"plist")
+                write_sample_app(archive, "Payload/Example.app/Info.plist")
             managed = root / "managed"
             config = configured(
                 {"automation": {"ipa_directory": str(managed), "import_directory": directory}}
@@ -121,7 +122,7 @@ class DiscordInboxTests(unittest.TestCase):
             root = Path(directory)
             source = root / "received.ipa"
             with zipfile.ZipFile(source, "w") as archive:
-                archive.writestr("Payload/Example.app/Info.plist", b"plist")
+                write_sample_app(archive, "Payload/Example.app/Info.plist")
             config = configured(
                 {
                     "automation": {
@@ -204,7 +205,7 @@ class DiscordInboxTests(unittest.TestCase):
             root = Path(directory)
             source = root / "received.ipa"
             with zipfile.ZipFile(source, "w") as archive:
-                archive.writestr("Payload/Example.app/Info.plist", b"plist")
+                write_sample_app(archive, "Payload/Example.app/Info.plist")
             config = configured(
                 {
                     "automation": {
@@ -273,7 +274,7 @@ class DiscordInboxTests(unittest.TestCase):
             root = Path(directory)
             source = root / "received.ipa"
             with zipfile.ZipFile(source, "w") as archive:
-                archive.writestr("Payload/Example.app/Info.plist", b"plist")
+                write_sample_app(archive, "Payload/Example.app/Info.plist")
             config = configured(
                 {
                     "automation": {

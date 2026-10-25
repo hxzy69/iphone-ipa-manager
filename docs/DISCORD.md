@@ -16,6 +16,10 @@ not the installer or a cloud storage service for your IPA files.
 6. Enable Windows sign-in startup only after confirming it works. Keep the release
    folder in a permanent location so its task action remains valid.
 
+The bot itself does not require the optional legacy Wi-Fi service. You can start
+it and configure accounts before device connectivity is ready. A device operation
+still requires a supported authenticated route; use the queue to wait for one.
+
 `/inbox` offers account autocomplete followed by filename autocomplete. The file
 must already be in your managed IPA folder. After successful assignment, that
 account's subsequent installs and renewals use the new file. `/assign` provides a
@@ -30,7 +34,8 @@ application log messages. Native sign-in saves credentials only after Apple
 authentication and developer access succeed. Use `/login_cancel` to cancel.
 
 The bot cannot operate while the PC is off, asleep, or signed out. Startup tasks
-retry failed connectivity. `/refresh` requires the established remote transport;
+retry failed connectivity. In the local candidate, `/refresh` can use paired USB,
+an authenticated local network session or the established remote transport;
 `/sideload` performs a full installation. `/stop` requests safe cancellation, so a
 device operation can take time to finish. Successful receipts, not an initial
 “Started” reply, determine completion.
@@ -46,11 +51,16 @@ health flags. It excludes account identities, filenames, device IDs, network
 addresses, paths, credentials and raw logs. The desktop can save the same report
 from **About and updates → Save support report**.
 
-The 0.2.0 candidate adds `/dashboard`, `/queue`, `/retry`, `/backup`, and `/update`.
+Version 0.2.0 adds `/dashboard`, `/queue`, `/retry`, `/backup`, and `/update`.
 Queue actions and account/request selection provide choices or autocomplete;
 retry offers recent-run autocomplete. Backup restores and update activation use
 private confirmation buttons. Configuration exports contain account emails and
 IPA names but no credentials or pairing; **Attach Files** permission is needed
 only for Discord backup downloads. See [dashboard and queue](DASHBOARD_AND_QUEUE.md)
 and [guided updates](UPDATING.md) for the recovery and restart semantics.
+
+The local 0.2.1 build adds `/maintenance`: show free disk space or confirm cleanup
+of old successful-run logs, terminal queue records, delivered reports and obsolete
+download archives. It preserves selected IPAs, credentials, unresolved jobs,
+completion evidence, the prepared update and rollback executables.
 

@@ -22,6 +22,90 @@ def jobs(root, limit=100):
     return [path for _, path in sorted(entries, reverse=True)[:limit]]
 
 
+def selection_matches(left, right, *, content=True):
+    from iphone_detector.wifi import canonical_serial
+
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    if any(
+        not isinstance(value.get("serial"), str) or not value["serial"] for value in (left, right)
+    ):
+        return False
+    serial = canonical_serial(left["serial"])
+    if not serial or serial != canonical_serial(right["serial"]):
+        return False
+    first, second = left.get("accounts"), right.get("accounts")
+    if not isinstance(first, list) or not isinstance(second, list) or len(first) != len(second):
+        return False
+    if not 1 <= len(first) <= 25:
+        return False
+    for selection in (first, second):
+        seen = set()
+        for entry in selection:
+            if (
+                not isinstance(entry, dict)
+                or type(entry.get("account")) is not int
+                or not 1 <= entry["account"] <= 25
+                or entry["account"] in seen
+                or any(
+                    not isinstance(entry.get(key), str) or not entry[key].strip()
+                    for key in ("email", "ipa")
+                )
+            ):
+                return False
+            seen.add(entry["account"])
+            identity = entry.get("file_identity")
+            if not isinstance(identity, dict) or any(
+                type(identity.get(key)) is not int or identity[key] < 0
+                for key in ("size", "mtime_ns")
+            ):
+                return False
+            if content and (
+                not isinstance(identity.get("sha256"), str)
+                or len(identity["sha256"]) != 64
+                or any(char not in "0123456789abcdef" for char in identity["sha256"])
+            ):
+                return False
+    for a, b in zip(first, second):
+        if not isinstance(a, dict) or not isinstance(b, dict):
+            return False
+        if any(a.get(key) != b.get(key) for key in ("account", "email", "ipa")):
+            return False
+        x, y = a.get("file_identity", {}), b.get("file_identity", {})
+        if not isinstance(x, dict) or not isinstance(y, dict):
+            return False
+        keys = ("size", "mtime_ns", "sha256") if content else ("size", "mtime_ns")
+        if any(key not in x or key not in y or x[key] != y[key] for key in keys):
+            return False
+    return bool(first)
+
+
+def verified_job(job, result, config=None):
+    from iphone_detector.background import make_job
+    from iphone_detector.config import load_config
+
+    try:
+        current = make_job(config if config is not None else load_config() or {}, "Network")
+        original = read(job / "selection.json") or read(job / "backend-job.json")
+        return (
+            result.get("ok") is True
+            and type(result.get("completed_accounts")) is int
+            and result["completed_accounts"] == len(current["accounts"])
+            and not result.get("prepared_only")
+            and selection_matches(original, current)
+        )
+    except OSError, ValueError, TypeError, KeyError:
+        return False
+
+
+def index_path(root, serial, entry):
+    import hashlib
+    from iphone_detector.wifi import canonical_serial
+
+    key = canonical_serial(serial or "") + ":" + entry["email"].casefold()
+    return root / "account-outcomes" / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+
+
 def record(job, request, number, operation="install"):
     entry = next((a for a in request.get("accounts", []) if a.get("account") == number), None)
     if entry is None or operation not in ("install", "refresh"):
@@ -29,10 +113,23 @@ def record(job, request, number, operation="install"):
     evidence = read(job / f"profile-refresh-{number}.json")
     expires = None
     if operation == "refresh" and evidence.get("profile_readback_verified") is True:
-        values = [item.get("after") for item in evidence.get("expiration_changes", [])]
         try:
-            expires = min(datetime.fromisoformat(value).timestamp() for value in values)
-        except ValueError, TypeError:
+            changes = evidence.get("expiration_changes")
+            if not isinstance(changes, list) or not changes:
+                raise ValueError("Missing profile expiration evidence")
+            values = []
+            for item in changes:
+                value = datetime.fromisoformat(item["after"])
+                if value.tzinfo is None:
+                    raise ValueError("Profile expiration has no timezone")
+                timestamp = value.timestamp()
+                if not math.isfinite(timestamp) or timestamp < 0:
+                    raise ValueError("Invalid profile expiration")
+                values.append(timestamp)
+            expires = min(values)
+        except ValueError, TypeError, KeyError, OverflowError, OSError:
+            # Completion still happened. Invalid optional metrics must not erase
+            # that receipt or invent a later renewal deadline.
             pass
     receipt = {
         "schema_version": 1,
@@ -45,6 +142,8 @@ def record(job, request, number, operation="install"):
         "profile_expires_at": expires,
     }
     write_json(job / f"completed-{number}.json", receipt)
+    if job.parent.name in ("automation-runs", "gui-jobs"):
+        write_json(index_path(job.parent.parent, request.get("serial"), entry), receipt)
     return receipt
 
 
@@ -71,14 +170,25 @@ def collect_native(job):
             continue
 
 
-def matching(receipt, request, entry):
+def matching(receipt, request, entry, *, content=True):
     from iphone_detector.wifi import canonical_serial
 
+    if not isinstance(receipt, dict) or not isinstance(request, dict):
+        return False
+    if any(
+        not isinstance(value.get("serial"), str) or not value["serial"]
+        for value in (receipt, request)
+    ):
+        return False
     return (
         receipt.get("verified") is True
         and canonical_serial(receipt.get("serial") or "")
         == canonical_serial(request.get("serial") or "")
-        and receipt.get("selection") == entry
+        and selection_matches(
+            {"serial": receipt.get("serial"), "accounts": [receipt.get("selection", {})]},
+            {"serial": request.get("serial"), "accounts": [entry]},
+            content=content,
+        )
         and type(receipt.get("at")) in (int, float)
         and math.isfinite(receipt["at"])
         and 0 <= receipt["at"] <= time.time() + 5
@@ -120,7 +230,7 @@ def retry_plan(job, config):
     return remaining
 
 
-def account_status(root, config):
+def account_status(root, config, *, verify_content=True):
     from iphone_detector.background import make_job
     from iphone_detector.settings import get_workflow
 
@@ -129,14 +239,28 @@ def account_status(root, config):
     request = {"serial": config.get("device", {}).get("serial"), "accounts": []}
     for index, _ in enumerate(get_workflow(config)):
         try:
-            request["accounts"].extend(make_job(config, "Network", accounts=[index])["accounts"])
+            request["accounts"].extend(
+                make_job(config, "Network", accounts=[index], verify_content=verify_content)[
+                    "accounts"
+                ]
+            )
         except OSError, ValueError:
             continue
-    for job in jobs(root):
-        for entry in request["accounts"]:
+    for entry in request["accounts"]:
+        receipt = read(index_path(root, request.get("serial"), entry))
+        if matching(receipt, request, entry, content=verify_content):
+            rows[entry["account"]] = receipt
+    missing = [entry for entry in request["accounts"] if entry["account"] not in rows]
+    if not missing:
+        return rows
+    for job in jobs(root, limit=None):
+        for entry in missing:
             number = entry["account"]
             receipt = read(job / f"completed-{number}.json")
-            if matching(receipt, request, entry):
+            if matching(receipt, request, entry, content=verify_content):
                 if number not in rows or receipt["at"] > rows[number]["at"]:
                     rows[number] = receipt
+    for entry in missing:
+        if entry["account"] in rows:
+            write_json(index_path(root, request.get("serial"), entry), rows[entry["account"]])
     return rows

@@ -8,6 +8,41 @@ from iphone_detector.job_history import recent_jobs
 
 
 class HistoryTests(unittest.TestCase):
+    def test_preparation_or_missing_account_snapshot_cannot_appear_completed(self):
+        from iphone_detector.job_history import describe
+
+        with tempfile.TemporaryDirectory() as directory:
+            job = Path(directory)
+            for accounts in (
+                None,
+                [],
+                [{"account": 1}, {"account": 1}],
+                [{"account": True}],
+                [{"account": 1}, {}],
+            ):
+                (job / "backend-job.json").write_text(json.dumps({"accounts": accounts}))
+                (job / "result.json").write_text(json.dumps({"ok": True, "completed_accounts": 3}))
+                self.assertEqual(describe(job)["status"], "Needs attention")
+            (job / "backend-job.json").write_text(json.dumps({"accounts": [{"account": 1}]}))
+            (job / "result.json").write_text(
+                json.dumps({"ok": True, "completed_accounts": 1, "prepared_only": True})
+            )
+            self.assertEqual(describe(job)["status"], "Prepared only")
+
+    def test_single_account_selection_before_backend_and_usb_route_are_reported(self):
+        from iphone_detector.job_history import describe
+
+        with tempfile.TemporaryDirectory() as directory:
+            job = Path(directory)
+            (job / "selection.json").write_text(json.dumps({"accounts": [{"account": 5}]}))
+            (job / "result.json").write_text(
+                json.dumps({"ok": True, "completed_accounts": 1, "transport": "usb"})
+            )
+            value = describe(job)
+            self.assertEqual(value["accounts"], [5])
+            self.assertEqual(value["status"], "Completed")
+            self.assertEqual(value["transport"], "USB")
+
     def test_only_matching_completion_count_is_reported_complete(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

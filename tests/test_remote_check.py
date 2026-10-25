@@ -8,6 +8,24 @@ def peer(ip="100.64.0.10"):
 
 
 class RemoteCheckTests(unittest.TestCase):
+    def test_remote_cache_lookup_resolves_normalized_ids_without_changing_identity(self):
+        records = [("ABCD-1234", None, {})]
+        with patch(
+            "pymobiledevice3.pair_records.iter_remote_pair_records_by_identifier",
+            return_value=records,
+        ):
+            self.assertEqual(remote.pairing_identifier("abcd1234"), "ABCD-1234")
+            self.assertEqual(remote.pairing_identifier("other-phone"), "other-phone")
+
+    def test_ambiguous_remote_pairing_records_require_review(self):
+        records = [("ABCD-1234", None, {}), ("abcd1234", None, {})]
+        with patch(
+            "pymobiledevice3.pair_records.iter_remote_pair_records_by_identifier",
+            return_value=records,
+        ):
+            with self.assertRaisesRegex(ValueError, "Multiple"):
+                remote.pairing_identifier("abcd1234")
+
     def test_selects_ios_case_and_rejects_unlisted_target(self):
         status = {"BackendState": "Running", "Peer": {"one": peer()}}
         self.assertEqual(remote.select_peer(status), "100.64.0.10")

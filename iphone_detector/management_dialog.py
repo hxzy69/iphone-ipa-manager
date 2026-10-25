@@ -11,16 +11,40 @@ from iphone_detector.paths import DATA_ROOT
 
 
 class ManagementDialog:
-    def __init__(self, app):
+    def __init__(self, app, *, preview=False):
         self.app = app
         self.events = queues.Queue()
+        self.action_events = queues.Queue()
         self.loading = False
         self.window = tk.Toplevel(app.root)
         self.window.title("Dashboard and queue")
-        self.window.geometry("1100x730")
+        self.window.geometry(
+            f"{min(1100, app.root.winfo_screenwidth() - 60)}x{min(730, app.root.winfo_screenheight() - 100)}"
+        )
         self.window.transient(app.root)
-        panel = ttk.Frame(self.window, padding=18)
-        panel.pack(fill="both", expand=True)
+        from iphone_detector.dialog_ui import shell, section, wrap_actions
+
+        panel, _ = shell(
+            self.window,
+            "Activity & app management",
+            "Review installed profiles, queue work, and recover incomplete runs.",
+            width=1050,
+            height=740,
+        )
+        self.tabs = ttk.Notebook(panel)
+        self.tabs.pack(fill="both", expand=True)
+        pages = {}
+        for title in ("Accounts", "Queue", "History & recovery"):
+            page = ttk.Frame(self.tabs, padding=12)
+            self.tabs.add(page, text=title)
+            pages[title] = page
+        self.tabs.enable_traversal()
+        panel = pages["Accounts"]
+        section(
+            panel,
+            "App status",
+            "Choose an account for a full install. Refresh renews all assigned accounts and may reinstall only when needed.",
+        )
         self.health = tk.StringVar()
         ttk.Label(panel, textvariable=self.health, wraplength=1050).pack(anchor="w", pady=8)
         self.accounts = self.table(
@@ -34,6 +58,7 @@ class ManagementDialog:
         ).pack(anchor="w")
         actions = ttk.Frame(panel)
         actions.pack(fill="x", pady=10)
+        action_rows = [actions]
         self.account = ttk.Combobox(actions, state="readonly", width=32)
         self.account.pack(side="left")
         ttk.Button(
@@ -42,9 +67,16 @@ class ManagementDialog:
         ttk.Button(
             actions, text="Queue refresh (all)", command=lambda: self.enqueue("refresh")
         ).pack(side="left")
+        panel = pages["Queue"]
+        section(
+            panel,
+            "Waiting and active requests",
+            "Waiting jobs run when the phone is reachable. Inspect an uncertain result before retrying.",
+        )
         self.queue = self.table(panel, ("Request", "Operation", "Accounts", "State"), 5)
         actions = ttk.Frame(panel)
         actions.pack(fill="x", pady=8)
+        action_rows.append(actions)
         ttk.Button(
             actions, text="Cancel waiting request", command=lambda: self.change("cancel")
         ).pack(side="left")
@@ -54,14 +86,15 @@ class ManagementDialog:
         from iphone_detector.job_history import read
 
         self.startup = tk.BooleanVar(
-            value=read(DATA_ROOT / "queue-settings.json").get("startup", True)
+            value=True if preview else read(DATA_ROOT / "queue-settings.json").get("startup", True)
         )
         ttk.Checkbutton(
             actions,
             text="Resume at Windows sign-in",
             variable=self.startup,
-            command=lambda: self.perform(self.change_startup),
+            command=self.toggle_startup,
         ).pack(side="left")
+        panel = pages["History & recovery"]
         ttk.Label(
             panel,
             text="Recent runs — retry performs full installs for accounts without a matching verified completion.",
@@ -69,12 +102,57 @@ class ManagementDialog:
         self.history = self.table(panel, ("Run", "Outcome", "Verified accounts"), 4)
         actions = ttk.Frame(panel)
         actions.pack(fill="x", pady=8)
+        action_rows.append(actions)
         ttk.Button(actions, text="Retry unfinished accounts", command=self.retry).pack(side="left")
         ttk.Button(actions, text="Export configuration backup", command=self.export).pack(
             side="left", padx=8
         )
         ttk.Button(actions, text="Restore backup…", command=self.restore).pack(side="left")
-        self.poll()
+        ttk.Button(actions, text="Clean old logs", command=self.cleanup).pack(side="left", padx=8)
+        for row in action_rows:
+            wrap_actions(row)
+        if preview:
+            from iphone_detector.dialog_ui import preview_notice
+
+            self.health.set(
+                "Sample iPhone · Remote tunnel ready\nSample renewal: next refresh in 4 days."
+            )
+            self.rows(
+                self.accounts,
+                [
+                    (
+                        str(i),
+                        (
+                            i,
+                            a["email"],
+                            a["ipa"],
+                            "Sample: today",
+                            "Profile refresh",
+                            "Sample: in 6 days",
+                        ),
+                    )
+                    for i, a in enumerate(app.accounts, 1)
+                ],
+            )
+            self.account.configure(values=["All accounts"] + [a["email"] for a in app.accounts])
+            self.account.current(0)
+            self.rows(
+                self.queue, [("sample", ("Sample request", "Refresh", "All", "Waiting for device"))]
+            )
+            self.rows(self.history, [("sample", ("Sample run", "Complete", "1, 2, 3"))])
+
+            def protect(parent):
+                for child in parent.winfo_children():
+                    if (
+                        isinstance(child, (ttk.Button, ttk.Checkbutton))
+                        and child.cget("text") != "Close"
+                    ):
+                        child.configure(command=lambda: preview_notice(self.window))
+                    protect(child)
+
+            protect(self.window)
+        else:
+            self.poll()
 
     def table(self, parent, columns, height):
         frame = ttk.Frame(parent)
@@ -84,8 +162,13 @@ class ManagementDialog:
             tree.heading(column, text=column)
             tree.column(column, width=150, minwidth=70)
         scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=scroll.set)
+        from iphone_detector.dialog_ui import scrollbar_callback
+
+        tree.configure(yscrollcommand=scrollbar_callback(scroll, tree))
         scroll.pack(side="right", fill="y")
+        horizontal = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+        tree.configure(xscrollcommand=scrollbar_callback(horizontal, tree, "bottom"))
+        horizontal.pack(side="bottom", fill="x")
         tree.pack(side="left", fill="both", expand=True)
         return tree
 
@@ -101,8 +184,17 @@ class ManagementDialog:
         if not self.window.winfo_exists():
             return
         try:
+            result, error = self.action_events.get_nowait()
+            if error:
+                messagebox.showerror("Dashboard", error, parent=self.window)
+            else:
+                self.app.status.set(str(result))
+                self.app.sync_saved()
+        except queues.Empty:
+            pass
+        try:
             from iphone_detector import dashboard, job_queue, operations
-            from iphone_detector.job_history import read
+            from iphone_detector.job_history import describe
 
             try:
                 value, queued, history, error = self.events.get_nowait()
@@ -122,9 +214,7 @@ class ManagementDialog:
                                     job.name,
                                     (
                                         job.name,
-                                        "Completed"
-                                        if read(job / "result.json").get("ok")
-                                        else "Needs attention / active",
+                                        describe(job)["status"],
                                         ", ".join(
                                             p.stem.removeprefix("completed-")
                                             for p in job.glob("completed-*.json")
@@ -195,7 +285,12 @@ class ManagementDialog:
                             e["id"],
                             e["mode"],
                             ", ".join(str(a["account"]) for a in e["selection"]["accounts"]),
-                            e["state"],
+                            e["state"]
+                            + (
+                                " · " + job_queue.failure_label(e)
+                                if job_queue.failure_label(e)
+                                else ""
+                            ),
                         ),
                     )
                     for e in queued
@@ -210,11 +305,13 @@ class ManagementDialog:
         self.app.root.after(3000, self.poll)
 
     def perform(self, operation):
-        try:
-            result = operation()
-            self.app.status.set(str(result))
-        except (OSError, ValueError, RuntimeError) as exc:
-            messagebox.showerror("Dashboard", str(exc), parent=self.window)
+        def run():
+            try:
+                self.action_events.put((operation(), None))
+            except (OSError, ValueError, RuntimeError) as exc:
+                self.action_events.put((None, str(exc)))
+
+        threading.Thread(target=run, daemon=True).start()
 
     def enqueue(self, mode):
         from iphone_detector import job_queue
@@ -229,10 +326,14 @@ class ManagementDialog:
             )
         )
 
+    def toggle_startup(self):
+        self.startup_value = self.startup.get()
+        self.perform(self.change_startup)
+
     def change_startup(self):
         from iphone_detector.job_queue import configure_startup
 
-        configure_startup(self.startup.get())
+        configure_startup(self.startup_value)
         return "Queue startup preference saved."
 
     def change(self, action):
@@ -249,19 +350,17 @@ class ManagementDialog:
         selected = self.history.selection()
         if not selected:
             return
+        if not messagebox.askyesno(
+            "Retry unfinished accounts",
+            "Queue full installs for unfinished accounts in this run? Inspect the phone first if its previous outcome was uncertain. Matching verified completions will be skipped.",
+            parent=self.window,
+        ):
+            return
 
         def operation():
             job = next(path for path in operations.jobs(DATA_ROOT) if path.name == selected[0])
             accounts = operations.retry_plan(job, load_config() or {})
-            if messagebox.askyesno(
-                "Retry unfinished accounts",
-                "Full-install accounts "
-                + ", ".join(str(n + 1) for n in accounts)
-                + "? Inspect the phone first if the previous outcome was uncertain. Verified completed accounts will be skipped.",
-                parent=self.window,
-            ):
-                return "Queued retry " + job_queue.enqueue("install", accounts)["id"]
-            return "Retry cancelled."
+            return "Queued retry " + job_queue.enqueue("install", accounts)["id"]
 
         self.perform(operation)
 
@@ -287,17 +386,28 @@ class ManagementDialog:
         )
         if not path:
             return
-
-        def operation():
+        try:
             value = preview(path)
-            if messagebox.askyesno(
-                "Restore configuration",
-                f"Replace assignments with {len(value['accounts'])} accounts? Credentials, pairing and the IPA folder stay local. Imported accounts still require saved Apple sign-in and available IPAs.",
-                parent=self.window,
-            ):
-                count = restore(value)
-                self.app.sync_saved(force=True)
-                return f"Restored {count} account assignments. Check setup before running."
-            return "Restore cancelled."
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Backup", str(exc), parent=self.window)
+            return
+        if messagebox.askyesno(
+            "Restore configuration",
+            f"Replace assignments with {len(value['accounts'])} accounts? Credentials, pairing and the IPA folder stay local. Imported accounts still require saved Apple sign-in and available IPAs.",
+            parent=self.window,
+        ):
+            self.perform(
+                lambda: (
+                    f"Restored {restore(value)} account assignments. Check setup before running."
+                )
+            )
 
-        self.perform(operation)
+    def cleanup(self):
+        from iphone_detector.maintenance import clean
+
+        if messagebox.askyesno(
+            "Clean old logs",
+            "Remove logs older than 30 days from successful, inactive runs and terminal queue/delivered report records older than 90 days? IPA files, credentials, unresolved runs and completion receipts are preserved.",
+            parent=self.window,
+        ):
+            self.perform(lambda: f"Removed {clean()} old files. Recovery receipts were preserved.")

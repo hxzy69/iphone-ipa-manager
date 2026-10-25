@@ -2,6 +2,8 @@
 
 from contextlib import contextmanager
 import json
+import logging
+import math
 import os
 import subprocess
 import time
@@ -15,6 +17,11 @@ from iphone_detector.run_lock import RunLock
 
 ROOT = DATA_ROOT / "queue"
 STATES = {"queued", "running", "completed", "failed", "interrupted", "cancelled", "acknowledged"}
+LOG = logging.getLogger("iphone-detector.queue")
+
+
+class QueueBusy(ValueError):
+    """Transient store contention; never treated as corrupt queue data."""
 
 
 @contextmanager
@@ -22,7 +29,7 @@ def guard():
     lock = RunLock()
     lock.name = "Local\\iPhoneIPACommunityQueueStore"
     if not lock.acquire():
-        raise ValueError("The queue is being changed. Try again.")
+        raise QueueBusy("The queue is being changed. Try again.")
     try:
         yield
     finally:
@@ -145,11 +152,60 @@ def change(identifier, action):
 
 
 def alive(entry):
+    # JSON permits NaN, and bool is an int subclass. Neither is process identity.
+    if (
+        type(entry.get("pid")) is not int
+        or entry["pid"] <= 0
+        or type(entry.get("process_created")) not in (int, float)
+        or not math.isfinite(entry["process_created"])
+        or entry["process_created"] <= 0
+    ):
+        return False
     try:
         process = psutil.Process(entry["pid"])
         return process.is_running() and abs(process.create_time() - entry["process_created"]) < 0.01
     except psutil.Error, KeyError, TypeError, ValueError:
         return False
+
+
+def failure_label(entry):
+    return (
+        {
+            "selection-changed": "Assignment or file changed",
+            "worker-launch-failed": "Worker could not start",
+            "worker-identity-unavailable": "Process tracking unavailable",
+            "job-storage-unavailable": "Job storage unavailable",
+            "completion-unverified": "Completion could not be verified",
+            "worker-interrupted": "Worker interrupted",
+        }.get(entry.get("failure_code"), "")
+        if isinstance(entry.get("failure_code"), str)
+        else ""
+    )
+
+
+def report_failure(entry):
+    """Persist one actionable notification; delivery retries never replay a job."""
+    from iphone_detector.discord_outbox import enqueue
+
+    messages = {
+        "selection-changed": "The phone, account or IPA changed after this request was queued. Select the current file and account and queue a new request.",
+        "worker-launch-failed": "Windows could not start the queued worker. No device work was started by this request.",
+        "worker-identity-unavailable": "The worker started but Windows process tracking failed. Inspect /history and the phone before retrying.",
+        "job-storage-unavailable": "The request's job folder could not be prepared. Check available disk space and folder access before retrying.",
+        "completion-unverified": "The queued worker stopped without a matching verified completion. Inspect /history and the phone before retrying.",
+        "worker-interrupted": "The queued worker stopped without a final receipt. Inspect /history and the phone before retrying.",
+    }
+    code = entry.get("failure_code")
+    message = messages.get(
+        code if isinstance(code, str) else "", "Inspect /history and the phone before retrying."
+    )
+    enqueue(
+        DATA_ROOT,
+        "queue-attention:" + entry["id"],
+        "Queue paused. "
+        + message
+        + " Use /queue to review and dismiss the failed request when it is safe to continue.",
+    )
 
 
 def step():
@@ -170,16 +226,25 @@ def step():
             job = DATA_ROOT / "automation-runs" / ("queue-" + entry["id"])
             result = read(job / "result.json")
             expected = len(entry["selection"]["accounts"])
+            from iphone_detector.operations import selection_matches
+
+            original = read(job / "selection.json") or read(job / "backend-job.json")
             verified = (
                 result.get("ok") is True
                 and type(result.get("completed_accounts")) is int
                 and result["completed_accounts"] == expected
                 and not result.get("prepared_only")
+                and selection_matches(original, entry["selection"])
             )
             entry["state"] = "completed" if verified else "failed" if result else "interrupted"
+            if not verified:
+                entry["failure_code"] = "completion-unverified" if result else "worker-interrupted"
             entry["finished_at"] = time.time()
             write_json(ROOT / (entry["id"] + ".json"), entry)
         if any(entry["state"] in ("failed", "interrupted") for entry in values):
+            for entry in values:
+                if entry["state"] in ("failed", "interrupted"):
+                    report_failure(entry)
             return False
         entry = next((item for item in values if item["state"] == "queued"), None)
         if entry is None:
@@ -190,19 +255,36 @@ def step():
                 return True
         finally:
             lock.close()
-        if entry["mode"] == "refresh" and remote_tunnel.state()["state"] != "ready":
-            return True
         chosen = [item["account"] - 1 for item in entry["selection"]["accounts"]]
+        failure_code = "selection-changed"
         try:
             request = make_job(load_config() or {}, "Network", accounts=chosen)
             if any(
                 request.get(key) != entry["selection"].get(key) for key in ("serial", "accounts")
             ):
                 raise ValueError("The account, phone or IPA changed after queuing.")
+            from iphone_detector.connection_router import route_ready
+
+            try:
+                ready = route_ready(refresh=entry["mode"] == "refresh")
+            except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
+                LOG.exception("Queue connectivity check failed; request remains waiting.")
+                ready = False
+            if not ready:
+                if entry.get("waiting_reason") != "connection":
+                    entry["waiting_reason"] = "connection"
+                    write_json(ROOT / (entry["id"] + ".json"), entry)
+                try:
+                    remote_tunnel.ensure_started()
+                except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
+                    LOG.exception("Could not start the remote tunnel; request remains waiting.")
+                return True
             job = DATA_ROOT / "automation-runs" / ("queue-" + entry["id"])
+            failure_code = "job-storage-unavailable"
             job.mkdir(parents=True, exist_ok=False)
             write_json(job / "selection.json", entry["selection"])
             entry["state"] = "running"
+            entry.pop("waiting_reason", None)
             write_json(ROOT / (entry["id"] + ".json"), entry)
             args = [
                 "--worker",
@@ -213,12 +295,22 @@ def step():
             if entry["mode"] != "refresh":
                 for number in chosen:
                     args += ["--account", str(number + 1)]
-            process = subprocess.Popen(command(args), creationflags=subprocess.CREATE_NO_WINDOW)
+            failure_code = "worker-launch-failed"
+            process = subprocess.Popen(
+                command(args),
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1"),
+            )
+            failure_code = "worker-identity-unavailable"
             entry.update(pid=process.pid, process_created=psutil.Process(process.pid).create_time())
             write_json(ROOT / (entry["id"] + ".json"), entry)
         except OSError, ValueError, psutil.Error:
             entry["state"] = "failed"
+            entry["failure_code"] = failure_code
+            entry["finished_at"] = time.time()
+            LOG.exception("Queued request paused (%s); no automatic replay.", failure_code)
             write_json(ROOT / (entry["id"] + ".json"), entry)
+            report_failure(entry)
             return False
         return True
 
@@ -245,11 +337,19 @@ def run():
     if not lock.acquire():
         return
     try:
+        from iphone_detector.activation_health import ready
+
+        ready("queue")
         write_json(
             DATA_ROOT / "queue-runner.json",
             {"pid": os.getpid(), "process_created": psutil.Process().create_time()},
         )
-        while step():
+        while True:
+            try:
+                if not step():
+                    break
+            except QueueBusy:
+                pass
             time.sleep(2)
     finally:
         (DATA_ROOT / "queue-runner.json").unlink(missing_ok=True)

@@ -1,9 +1,11 @@
 """Verified side-by-side updates and recoverable normal-user startup migration."""
 
 import hashlib
+import logging
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import time
 from urllib.parse import urlsplit
@@ -13,13 +15,14 @@ import zipfile
 
 import psutil
 
-from iphone_detector.paths import DATA_ROOT, FROZEN
+from iphone_detector.paths import DATA_ROOT, FROZEN, process_uses_profile
 from iphone_detector.storage import write_json
 from iphone_detector.job_history import read
 from iphone_detector.updates import REPOSITORY, version_tuple
 
 STATE = DATA_ROOT / "update-state.json"
 PREVIOUS = DATA_ROOT / "previous-version.json"
+LOG = logging.getLogger("iphone-detector.update")
 
 
 def download(url, destination, limit):
@@ -41,15 +44,37 @@ def download(url, destination, limit):
 
 
 def prepare(release):
-    from iphone_detector.release_integrity import verify_release
 
     version_tuple(release.version)
+    if shutil.disk_usage(Path(DATA_ROOT).anchor).free < 1024**3:
+        raise ValueError("Keep at least 1 GiB free to download and prepare an update safely.")
     tag = release.url.removeprefix(REPOSITORY + "/releases/tag/")
     if release.url != REPOSITORY + "/releases/tag/" + tag or tag != "v" + release.version:
         raise ValueError("Choose an official release.")
     version = release.version.removesuffix("-preview")
     folder = DATA_ROOT / "updates" / (version + "-" + uuid.uuid4().hex[:12])
     folder.mkdir(parents=True)
+    try:
+        return _prepare_downloads(folder, version, tag)
+    except BaseException:
+        # This attempt created the directory. Never accumulate hundreds of MB
+        # after a failed/offline download, or touch a previous prepared update.
+        try:
+            if (
+                folder.is_symlink()
+                or folder.is_junction()
+                or folder.resolve().parent != (DATA_ROOT / "updates").resolve()
+            ):
+                raise ValueError("Update staging directory was redirected")
+            shutil.rmtree(folder)
+        except OSError, ValueError:
+            LOG.warning("Could not remove the failed update's staging directory.")
+        raise
+
+
+def _prepare_downloads(folder, version, tag):
+    from iphone_detector.release_integrity import verify_release
+
     names = [
         f"iPhoneIPAManager-{version}-windows-x64.zip",
         f"iPhoneIPAManager-{version}-source.zip",
@@ -149,7 +174,7 @@ def check_runtime(executable, version=None):
     verify_receipt(read(report), executable.read_bytes(), expected_version=version)
 
 
-def launch(executable, preferences, gui=True):
+def launch(executable, preferences, gui=True, *, require_ack=True):
     base = [str(executable), "--data-dir", str(DATA_ROOT)]
     modes = [
         args
@@ -163,16 +188,56 @@ def launch(executable, preferences, gui=True):
     if gui:
         modes.append([])
     started = []
+    nonce = uuid.uuid4().hex
+    components = {"--discord": "discord", "--remote-daemon": "remote", "--queue-runner": "queue"}
     try:
         for args in modes:
             started.append(
                 subprocess.Popen(
                     base + args,
                     creationflags=subprocess.CREATE_NO_WINDOW,
-                    env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1"),
+                    env=dict(
+                        os.environ,
+                        PYINSTALLER_RESET_ENVIRONMENT="1",
+                        IPA_MANAGER_ACTIVATION_NONCE=nonce,
+                    ),
                 )
             )
-    except OSError:
+        deadline = time.monotonic() + (45 if require_ack else 5)
+        waiting = list(zip(started, modes))
+        while waiting:
+            for process, args in waiting[:]:
+                component = components.get(args[0], "gui") if args else "gui"
+                receipt = read(DATA_ROOT / "activation-health" / f"{nonce}-{component}.json")
+                if (
+                    require_ack
+                    and receipt.get("nonce") == nonce
+                    and receipt.get("component") == component
+                ):
+                    actual = psutil.Process(receipt["pid"])
+                    if (
+                        Path(actual.exe()).resolve() != Path(executable).resolve()
+                        or abs(actual.create_time() - receipt["created"]) > 0.01
+                        or (
+                            actual.pid != process.pid
+                            and process.pid not in [p.pid for p in actual.parents()]
+                        )
+                    ):
+                        raise ValueError("Replacement startup identity could not be verified.")
+                    waiting.remove((process, args))
+                    continue
+                if process.poll() is not None:
+                    raise ValueError(
+                        "A replacement component exited before healthy startup. Rolling back."
+                    )
+            if not waiting:
+                break
+            if time.monotonic() >= deadline:
+                if not require_ack:
+                    break
+                raise ValueError("Replacement startup was not acknowledged. Rolling back.")
+            time.sleep(0.2)
+    except OSError, ValueError, TypeError, KeyError, psutil.Error:
         for process in started:
             try:
                 if process.poll() is None:
@@ -210,6 +275,7 @@ def activate(plan_path, parent_pid):
     old = Path(sys.executable)
     preferences = None
     parent_closed = False
+    managed = None
     try:
         plan, executable = validate_plan(plan_path)
         if not parent_pid or not lock.acquire():
@@ -226,7 +292,7 @@ def activate(plan_path, parent_pid):
             "discord": discord.get("startup") is True or "--discord" in parent.cmdline(),
             "remote": read(DATA_ROOT / "remote.json").get("enabled") is True,
             "renewal": read(DATA_ROOT / "auto-refresh.json").get("enabled") is True,
-            "queue": bool((DATA_ROOT / "queue").exists()),
+            "queue": bool(job_queue.pending()),
         }
         # Keep only processes from this executable and this private data directory.
         peers = []
@@ -238,7 +304,7 @@ def activate(plan_path, parent_pid):
                 and process.info["exe"]
                 and Path(process.info["exe"]).resolve() == old.resolve()
                 and {arg for arg in args[1:] if arg.startswith("--")} <= {"--data-dir"}
-                and ("--data-dir" not in args or str(DATA_ROOT) in args)
+                and process_uses_profile(args, DATA_ROOT)
             ):
                 guis.append((process.pid, process.info["create_time"]))
             if (
@@ -249,7 +315,7 @@ def activate(plan_path, parent_pid):
                     flag in args
                     for flag in ("--discord", "--remote-daemon", "--auto-refresh", "--queue-runner")
                 )
-                and ("--data-dir" not in args or str(DATA_ROOT) in args)
+                and process_uses_profile(args, DATA_ROOT)
             ):
                 peers.append((process.pid, process.info["create_time"]))
                 if "--discord" in args:
@@ -264,6 +330,22 @@ def activate(plan_path, parent_pid):
         for pid, when in guis:
             wait_for_exit(pid, when)
         write_json(STATE, {"phase": "migrating", "at": time.time()})
+        from iphone_detector import desktop_install
+
+        install_root = desktop_install.installation_root().resolve()
+        if old.resolve().is_relative_to(install_root):
+            previous_install = desktop_install.manifest(install_root)
+            if (
+                previous_install is None
+                or (install_root / previous_install["executable"]).resolve() != old.resolve()
+            ):
+                raise ValueError(
+                    "Open the currently installed version before activating its update."
+                )
+            managed = (install_root, previous_install)
+            executable = desktop_install.install_payload(
+                executable.parent, install_root, _lock_held=True
+            )
         configure_tasks(old, executable)
         write_json(
             PREVIOUS,
@@ -271,14 +353,21 @@ def activate(plan_path, parent_pid):
                 "schema_version": 1,
                 "executable": str(old),
                 "sha256": hashlib.sha256(old.read_bytes()).hexdigest(),
+                "version": __import__("iphone_detector").__version__,
             },
         )
-        launch(executable, preferences)
+        launch(
+            executable,
+            preferences,
+            require_ack=version_tuple(plan.get("version", "0.2.1")) >= (0, 2, 1),
+        )
         write_json(STATE, {"phase": "complete", "at": time.time(), "executable": str(executable)})
         return 0
     except Exception as exc:
         if preferences is not None:
             try:
+                if managed is not None:
+                    desktop_install.restore_installation(*managed)
                 configure_tasks(executable, old)
                 launch(old, preferences, gui=parent_closed)
             except Exception:

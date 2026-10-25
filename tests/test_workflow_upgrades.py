@@ -27,6 +27,7 @@ class WorkflowUpgradeTests(unittest.TestCase):
             patch.object(job_queue, "ROOT", self.root / "queue"),
             patch.object(job_queue, "DATA_ROOT", self.root),
             patch.object(job_queue, "ensure_started"),
+            patch("iphone_detector.connection_router.route_ready", return_value=True),
             patch("iphone_detector.startup_task.configure"),
             patch("iphone_detector.config.load_config", return_value=self.config),
             patch("iphone_detector.config_backup.load_config", return_value=self.config),
@@ -149,6 +150,32 @@ class WorkflowUpgradeTests(unittest.TestCase):
             self.assertFalse(job_queue.step())
             spawn.assert_not_called()
         self.assertEqual(job_queue.entries()[0]["state"], "failed")
+
+    def test_network_probe_failure_keeps_request_waiting_then_resumes(self):
+        first = job_queue.enqueue(accounts=[0])
+        with (
+            patch("iphone_detector.connection_router.route_ready", side_effect=OSError("offline")),
+            patch(
+                "iphone_detector.remote_tunnel.ensure_started", side_effect=OSError("unavailable")
+            ),
+            patch.object(job_queue.subprocess, "Popen") as spawn,
+        ):
+            self.assertTrue(job_queue.step())
+            self.assertTrue(job_queue.step())
+            spawn.assert_not_called()
+        entry = job_queue.entries()[0]
+        self.assertEqual(entry["id"], first["id"])
+        self.assertEqual(entry["state"], "queued")
+        self.assertEqual(entry["waiting_reason"], "connection")
+        self.assertFalse((self.root / "automation-runs").exists())
+        with (
+            patch.object(job_queue.subprocess, "Popen", return_value=Mock(pid=123)) as spawn,
+            patch.object(job_queue.psutil, "Process", return_value=Mock(create_time=lambda: 1.0)),
+        ):
+            self.assertTrue(job_queue.step())
+            spawn.assert_called_once()
+        self.assertEqual(job_queue.entries()[0]["state"], "running")
+        self.assertNotIn("waiting_reason", job_queue.entries()[0])
 
     def test_corrupt_queue_is_preserved_and_blocks_dispatch(self):
         job_queue.ROOT.mkdir()

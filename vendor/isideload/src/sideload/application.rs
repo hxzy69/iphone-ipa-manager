@@ -41,24 +41,46 @@ impl Application {
 
         if isideload_vfs::fs::metadata(&bundle_path)?.is_file() {
             let temp_dir = isideload_vfs::fs::temp_dir();
-            let temp_path = temp_dir.join(
-                path.file_name()
-                    .ok_or_report()?
-                    .to_string_lossy()
-                    .to_string()
-                    + "_extracted",
-            );
-            if isideload_vfs::fs::metadata(&temp_path).is_ok() {
-                isideload_vfs::fs::remove_dir_all(&temp_path)
-                    .context("Failed to remove existing temporary directory")?;
-            }
-            isideload_vfs::fs::create_dir_all(&temp_path)
-                .context("Failed to create temporary directory")?;
+            let temp_path = temp_dir.join(format!("ipa-manager-extract-{}", uuid::Uuid::new_v4()));
 
             let file = File::open(&path).context("Failed to open application archive")?;
             let mut archive =
                 ZipArchive::new(file).context("Failed to open application archive")?;
 
+            // IPAs are untrusted inputs even when callers bypass the desktop preflight.
+            if archive.len() > 100_000 {
+                bail!("IPA archive contains too many files");
+            }
+            let mut expanded = 0u64;
+            let mut names = std::collections::HashSet::new();
+            for index in 0..archive.len() {
+                let entry = archive.by_index(index)?;
+                let name = entry.name()?;
+                expanded = expanded.checked_add(entry.size()).ok_or_report()?;
+                if expanded > 8 * 1024 * 1024 * 1024
+                    || entry.size() > 2 * 1024 * 1024 * 1024
+                    || (entry.size() > 1024 * 1024
+                        && entry.size() / entry.compressed_size().max(1) > 500)
+                    || entry.enclosed_name().is_none()
+                    || name.contains(['\\', ':'])
+                    || name.chars().any(|c| c.is_control())
+                    || entry.unix_mode().is_some_and(|mode| mode & 0o170000 == 0o120000)
+                    || !names.insert(name.to_lowercase())
+                    || name.split('/').any(|part| {
+                        let stem = part.split('.').next().unwrap_or("").to_ascii_uppercase();
+                        part.ends_with(['.', ' '])
+                            || matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+                            || (stem.len() == 4
+                                && (stem.starts_with("COM") || stem.starts_with("LPT"))
+                                && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+                    })
+                {
+                    bail!("IPA archive contains unsafe paths, links or excessive expanded data");
+                }
+            }
+
+            isideload_vfs::fs::create_dir_all(&temp_path)
+                .context("Failed to create temporary directory")?;
             archive
                 .extract(&temp_path)
                 .context("Failed to extract application archive")?;
@@ -393,5 +415,34 @@ impl std::fmt::Display for SpecialApp {
             SpecialApp::AltStore => write!(f, "AltStore"),
             SpecialApp::StikStore => write!(f, "StikStore"),
         }
+    }
+}
+
+#[cfg(test)]
+mod untrusted_archive_tests {
+    use super::Application;
+    use std::fs::File;
+    use zip::{ZipWriter, write::SimpleFileOptions};
+
+    #[test]
+    fn rejects_escaping_archive_members_before_bundle_loading() {
+        let source = std::env::temp_dir().join(format!("ipa-guard-{}.ipa", uuid::Uuid::new_v4()));
+        let mut writer = ZipWriter::new(File::create(&source).unwrap());
+        writer.start_file("../escape.txt", SimpleFileOptions::default()).unwrap();
+        writer.finish().unwrap();
+        let result = Application::new(source.clone());
+        std::fs::remove_file(source).unwrap();
+        assert!(result.err().unwrap().to_string().contains("unsafe paths"));
+    }
+
+    #[test]
+    fn rejects_windows_aliases_before_bundle_loading() {
+        let source = std::env::temp_dir().join(format!("ipa-guard-{}.ipa", uuid::Uuid::new_v4()));
+        let mut writer = ZipWriter::new(File::create(&source).unwrap());
+        writer.start_file("Payload/Test.app/CON.txt", SimpleFileOptions::default()).unwrap();
+        writer.finish().unwrap();
+        let result = Application::new(source.clone());
+        std::fs::remove_file(source).unwrap();
+        assert!(result.err().unwrap().to_string().contains("unsafe paths"));
     }
 }

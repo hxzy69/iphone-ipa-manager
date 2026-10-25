@@ -27,3 +27,6 @@ tools/optimized-iloader/*.exe
 tools/netmuxd/*.exe
 tools/wifi-service/*.exe
 
+
+/build-*/
+/dist-*/

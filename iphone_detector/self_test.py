@@ -8,6 +8,7 @@ import sys
 import tempfile
 import uuid
 import zipfile
+import plistlib
 
 
 def run(report_path):
@@ -153,8 +154,45 @@ def run(report_path):
                 raise RuntimeError("Operational report was not persisted")
             if pending(root, dict(audience, channel_id=4)):
                 raise RuntimeError("Report audience isolation failed")
+            path, report = pending(root, audience)[0]
+            write_json(path, dict(report, delivered_at=1))
+            if not enqueue(root, "self-test", "Duplicate producer") or pending(root, audience):
+                raise RuntimeError("Duplicate producer reset delivery acknowledgement")
 
         check("durable private operational reports", outbox)
+
+        def interrupted_remote():
+            from iphone_detector.remote_tunnel import pending
+
+            root = folder / "remote-claim-check"
+            job = root / "automation-runs/fixture"
+            write_json(job / "remote-request.json", {"accounts": [1]})
+            (job / "remote-heartbeat").touch()
+            (job / "remote-execution.json").touch()
+            if list(pending(root)):
+                raise RuntimeError("Interrupted remote work was offered for replay")
+            if json.loads((job / "remote-result.json").read_text())["ok"] is not False:
+                raise RuntimeError("Interrupted remote result was not preserved")
+
+        check("interrupted remote dispatch never replays", interrupted_remote)
+
+        def remote_completion():
+            from iphone_detector.remote_tunnel import completed_result
+
+            for value in (
+                [],
+                {"ok": 1, "completed_accounts": 1},
+                {"ok": True, "completed_accounts": True},
+                {"ok": True, "completed_accounts": 1.0},
+            ):
+                try:
+                    completed_result(value, 1)
+                except RuntimeError:
+                    continue
+                raise RuntimeError("Invalid remote completion was accepted")
+            completed_result({"ok": True, "completed_accounts": 1}, 1)
+
+        check("typed remote completion receipts", remote_completion)
 
         def mutex():
             from iphone_detector.run_lock import RunLock
@@ -178,7 +216,17 @@ def run(report_path):
 
             path = folder / "sample.ipa"
             with zipfile.ZipFile(path, "w") as file:
-                file.writestr("Payload/Test.app/Info.plist", b"plist")
+                file.writestr(
+                    "Payload/Test.app/Info.plist",
+                    plistlib.dumps(
+                        {
+                            "CFBundleIdentifier": "com.example.test",
+                            "CFBundleExecutable": "Test",
+                            "CFBundleVersion": "1",
+                        }
+                    ),
+                )
+                file.writestr("Payload/Test.app/Test", b"test executable")
             validate_ipa(path)
             with zipfile.ZipFile(path, "a") as file:
                 file.writestr("../escape", b"bad")

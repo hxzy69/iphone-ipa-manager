@@ -69,6 +69,7 @@ class RouterTests(unittest.TestCase):
             self.native.side_effect = RuntimeError("install failed")
         self.remote = Mock(return_value={"ok": True, "completed_accounts": 3})
         contexts = [
+            patch.object(router, "find_usb", return_value=None),
             patch.object(router, "find_local", return_value="192.168.1.7" if local else None),
             patch("iphone_detector.remote_tunnel.settings", return_value={}),
             patch(

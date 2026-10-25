@@ -10,12 +10,73 @@ from fixtures import ACCOUNTS as DEFAULT_ACCOUNTS
 
 
 class BackgroundTests(unittest.TestCase):
+    def test_truthy_and_untyped_backend_results_cannot_claim_verified_completion(self):
+        values = (
+            [],
+            {"ok": 1, "completed_accounts": 1},
+            {"ok": True, "completed_accounts": True},
+            {"ok": True, "completed_accounts": 1.0},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            job = Path(directory)
+            request = {"accounts": [{"account": 1}]}
+            process = Mock(returncode=0, poll=Mock(return_value=0))
+            for value in values:
+                (job / "backend-result.json").write_text(json.dumps(value))
+                with (
+                    self.subTest(value=value),
+                    patch.object(background, "cache_executable", return_value=Path("backend.exe")),
+                    patch.object(background.subprocess, "Popen", return_value=process),
+                ):
+                    with self.assertRaises(RuntimeError):
+                        background.run_background(job, Mock(), request_override=request)
+
+    def test_damaged_progress_does_not_abort_a_successful_native_operation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job = Path(directory)
+            (job / "backend-result.json").write_text(
+                json.dumps({"ok": True, "completed_accounts": 1})
+            )
+            (job / "backend-events.jsonl").write_text(
+                'broken\n[]\n{}\n{"stage":"completed_account","account":1}\n'
+            )
+            process = Mock(returncode=0)
+            process.poll.side_effect = [None, 0, 0]
+            with (
+                patch.object(background, "cache_executable", return_value=Path("backend.exe")),
+                patch.object(background.subprocess, "Popen", return_value=process),
+            ):
+                result = background.run_background(
+                    job, Mock(), request_override={"accounts": [{"account": 1}]}
+                )
+            self.assertTrue(result["ok"])
+            process.terminate.assert_not_called()
+
+    def setUp(self):
+        # These tests isolate backend result interpretation. Snapshot integrity
+        # is exercised with real archives in test_input_hardening.
+        from contextlib import nullcontext
+
+        item = patch(
+            "iphone_detector.input_integrity.snapshot_inputs",
+            side_effect=lambda job, request: nullcontext(request),
+        )
+        item.start()
+        self.addCleanup(item.stop)
+
     def test_selection_snapshot_rejects_changed_account_or_file(self):
         with tempfile.TemporaryDirectory() as directory:
             job = Path(directory)
             request = {
                 "serial": "phone",
-                "accounts": [{"account": 2, "email": "two@example.com", "ipa": "Chosen.ipa"}],
+                "accounts": [
+                    {
+                        "account": 2,
+                        "email": "two@example.com",
+                        "ipa": "Chosen.ipa",
+                        "file_identity": {"size": 1, "mtime_ns": 1, "sha256": "0" * 64},
+                    }
+                ],
             }
             (job / "selection.json").write_text(json.dumps(request))
             with patch.object(background, "make_job", return_value=request):

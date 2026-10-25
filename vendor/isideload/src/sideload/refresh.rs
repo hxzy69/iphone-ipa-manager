@@ -8,7 +8,7 @@ use crate::dev::{app_ids::AppIdsApi, developer_session::DeveloperSession, teams:
 
 fn metadata(path: &Path, team: &str) -> Result<Vec<(String, Value, String)>, Report> {
     let mut archive = ZipArchive::new(File::open(path)?)?;
-    let names: Vec<String> = archive.file_names().map(str::to_owned).collect();
+    let names: Vec<String> = archive.file_names().map(|name| name.map(|value| value.into_owned())).collect::<Result<_, _>>()?;
     let mains: Vec<_> = names.iter().filter(|name| name.starts_with("Payload/")
         && name.matches('/').count() == 2 && name.ends_with(".app/Info.plist")).collect();
     if mains.len() != 1 { bail!("Refresh requires one main app"); }

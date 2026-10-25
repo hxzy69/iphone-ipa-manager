@@ -19,21 +19,10 @@ def email_address(value):
 
 
 def server_url():
-    path = Path(os.environ.get("APPDATA", "")) / "me.nabdev.iloader/preferences.json"
-    value = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
-    server = value.get("newAnisetteServer", "new.ani.sidestore.io")
-    server = (
-        server
-        if server.startswith("https://")
-        else "https://" + server
-        if "://" not in server
-        else server
-    )
-    if not server.startswith("https://"):
-        raise ValueError(
-            "Apple sign-in requires an HTTPS anisette server in the local iloader settings."
-        )
-    return server
+    from iphone_detector.config import load_config
+    from iphone_detector.background import resolve_server
+
+    return resolve_server(load_config() or {})
 
 
 def save_iloader_account(email):

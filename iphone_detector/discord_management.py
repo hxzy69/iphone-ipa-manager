@@ -56,6 +56,7 @@ def register(tree, guild, allow, discord, can_suggest=None):
             "/queue — queue jobs, cancel waiting requests or dismiss failures.\n"
             "/retry — full-install unfinished accounts from a selected run.\n"
             "/backup — export preferences/assignments or preview a restore.\n"
+            "/maintenance — free disk space and safe cleanup of old completed-run logs.\n"
             "/history — recent verified outcomes.\n"
             "/stop — request safe cancellation, including GUI and scheduled jobs.\n"
             "/check — read-only setup checks.\n"
@@ -131,12 +132,9 @@ def register(tree, guild, allow, discord, can_suggest=None):
             return
 
         def inspect():
-            value = controls.setup_check()
-            return (
-                "**Setup check**\nPaired device configured: {paired}\nIPA folder exists: {folder_exists}"
-                "\nBackend available: {backend_exists}\nWi-Fi service installed: {wifi_service}"
-                "\nMissing IPA accounts: {missing}\n{tunnel}\n{schedule}\n{note}"
-            ).format(**value, missing=", ".join(value["missing_accounts"]) or "none")
+            from iphone_detector.readiness import inspect, format_report
+
+            return format_report(inspect())
 
         await reply(interaction, inspect)
 

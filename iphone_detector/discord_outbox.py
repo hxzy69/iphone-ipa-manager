@@ -3,6 +3,7 @@
 import hashlib
 import json
 import time
+import math
 
 from iphone_detector.storage import write_json
 
@@ -17,16 +18,16 @@ def enqueue(root, key, message):
         return False
     path = root / "discord-outbox" / (hashlib.sha256(key.encode()).hexdigest() + ".json")
     try:
-        if not path.exists():
-            write_json(
-                path,
-                {
-                    "audience": audience,
-                    "message": message[:1800],
-                    "created": time.time(),
-                    "key": key,
-                },
-            )
+        write_json(
+            path,
+            {
+                "audience": audience,
+                "message": message[:1800],
+                "created": time.time(),
+                "key": key,
+            },
+            exclusive=True,
+        )
     except OSError:
         import logging
 
@@ -49,6 +50,8 @@ def pending(root, settings):
                 or not isinstance(value.get("message"), str)
                 or not 0 < len(value["message"]) <= 1800
                 or type(value.get("created")) not in (int, float)
+                or not math.isfinite(value["created"])
+                or not 0 <= value["created"] <= time.time() + 5
             ):
                 continue
             found.append((path, value))

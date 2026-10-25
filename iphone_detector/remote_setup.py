@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 
-from iphone_detector.remote_check import read_pair, select_peer
+from iphone_detector.remote_check import read_pair, select_peer, pairing_identifier
 from iphone_detector.wifi import canonical_serial
 
 
@@ -36,7 +36,6 @@ async def provision(serial, phone_ip, lan_ip=None):
     from pymobiledevice3.remote.tunnel_service import (
         RemotePairingLockdownService,
         create_core_device_tunnel_service_using_remotepairing,
-        get_remote_pairing_tunnel_services,
     )
 
     pair = read_pair(serial)
@@ -71,6 +70,7 @@ async def provision(serial, phone_ip, lan_ip=None):
     try:
         if canonical_serial(client.udid or "") != canonical_serial(serial):
             raise ValueError("The connected iPhone does not match the saved device.")
+        remote_identifier = client.udid
         service = await RemotePairingLockdownService.create(client)
         try:
             try:
@@ -85,7 +85,10 @@ async def provision(serial, phone_ip, lan_ip=None):
             await service.close()
     finally:
         await client.close()
-    services = await get_remote_pairing_tunnel_services(bonjour_timeout=5, udid=serial)
+    remote_identifier = pairing_identifier(remote_identifier)
+    from iphone_detector.remote_discovery import discover
+
+    services = await discover(remote_identifier, {"ip": phone_ip})
     try:
         ports = sorted({service.port for service in services})
     finally:
@@ -95,13 +98,18 @@ async def provision(serial, phone_ip, lan_ip=None):
         try:
             remote = await asyncio.wait_for(
                 create_core_device_tunnel_service_using_remotepairing(
-                    serial, phone_ip, port, autopair=False
+                    remote_identifier, phone_ip, port, autopair=False
                 ),
                 timeout=12,
             )
             try:
                 if remote.encryption_key:
-                    return {"enabled": True, "serial": serial, "ip": phone_ip, "port": port}
+                    return {
+                        "enabled": True,
+                        "serial": remote_identifier,
+                        "ip": phone_ip,
+                        "port": port,
+                    }
             finally:
                 await remote.close()
         except OSError, asyncio.TimeoutError:

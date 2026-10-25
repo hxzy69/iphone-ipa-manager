@@ -22,8 +22,15 @@ class AccountLoginTests(unittest.TestCase):
             with zipfile.ZipFile(source, "w") as archive:
                 archive.writestr(
                     "Payload/Fourth.app/Info.plist",
-                    plistlib.dumps({"CFBundleIdentifier": "app.fourth"}),
+                    plistlib.dumps(
+                        {
+                            "CFBundleIdentifier": "app.fourth",
+                            "CFBundleVersion": "1",
+                            "CFBundleExecutable": "Fourth",
+                        }
+                    ),
                 )
+                archive.writestr("Payload/Fourth.app/Fourth", b"sample executable")
             stat = source.stat()
             config = configured(
                 {"automation": {"ipa_directory": directory}, "device": {"serial": "preserved"}}

@@ -37,6 +37,8 @@ def main():
             "self-test.json",
             "dependencies.json",
             "native-dependencies.json",
+            "dependency-audit.json",
+            "sbom.cdx.json",
         )
     ]
     files += [path for path in (dist / "licenses").rglob("*") if path.is_file()]

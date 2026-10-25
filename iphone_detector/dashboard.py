@@ -27,9 +27,10 @@ def connection(root=DATA_ROOT):
     speed = None
     for job in jobs(root):
         transport = read(job / "route.json").get("transport")
-        if transport in ("local-wifi", "remote"):
-            route = "Last route: " + (
-                "Local Wi-Fi" if transport == "local-wifi" else "Remote tunnel"
+        if transport in ("usb", "local-wifi", "remote"):
+            route = (
+                "Last route: "
+                + {"usb": "USB", "local-wifi": "Local Wi-Fi", "remote": "Remote tunnel"}[transport]
             )
             metrics = read(job / "remote-transfer.json")
             try:
@@ -68,7 +69,7 @@ def snapshot():
 
     config = load_config() or {}
     folder = Path(config.get("automation", {}).get("ipa_directory", Path.home() / "Downloads/ipas"))
-    outcomes = account_status(DATA_ROOT, config)
+    outcomes = account_status(DATA_ROOT, config, verify_content=False)
     accounts = []
     for index, account in enumerate(get_workflow(config), 1):
         receipt = outcomes.get(index, {})

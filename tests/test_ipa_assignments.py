@@ -1,3 +1,4 @@
+from fixtures import write_sample_app
 from fixtures import configured
 import asyncio
 import json
@@ -7,36 +8,89 @@ from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch
 
 from iphone_detector.ipa_assignments import acknowledge_installs, mark_pending, needs_install
+from iphone_detector.input_integrity import identity
 
 
 class AssignmentTests(unittest.TestCase):
+    def test_old_phone_account_or_folder_cannot_acknowledge_a_new_assignment(self):
+        import copy
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "New.ipa"
+            source.write_bytes(b"fixture")
+            request = {
+                "serial": "phone",
+                "accounts": [
+                    {
+                        "account": 1,
+                        "email": "one@example.com",
+                        "ipa": str(source),
+                        "file_identity": identity(source),
+                    }
+                ],
+            }
+            config = {
+                "device": {"serial": "phone"},
+                "automation": {
+                    "ipa_directory": str(root),
+                    "accounts": [{"email": "one@example.com", "ipa": "New"}],
+                    "pending_ipa_installs": {"1": "New"},
+                },
+            }
+            for change in ("phone", "email", "folder", "missing-identity", "truthy-success"):
+                current, snapshot = copy.deepcopy(config), copy.deepcopy(request)
+                result = {"ok": True, "completed_accounts": 1}
+                if change == "phone":
+                    current["device"]["serial"] = "other-phone"
+                elif change == "email":
+                    current["automation"]["accounts"][0]["email"] = "other@example.com"
+                elif change == "folder":
+                    current["automation"]["ipa_directory"] = str(root / "different")
+                elif change == "missing-identity":
+                    snapshot["accounts"][0].pop("file_identity")
+                else:
+                    result["ok"] = 1
+                (root / "backend-job.json").write_text(json.dumps(snapshot))
+                with (
+                    self.subTest(change=change),
+                    patch("iphone_detector.config.load_config", return_value=current),
+                    patch("iphone_detector.config.save_config") as save,
+                ):
+                    acknowledge_installs(root, result)
+                    save.assert_not_called()
+                    self.assertEqual(current["automation"]["pending_ipa_installs"], {"1": "New"})
+
     def test_replaced_source_never_clears_pending_install(self):
         with tempfile.TemporaryDirectory() as directory:
             job = Path(directory)
             source = job / "New.ipa"
             source.write_bytes(b"old")
-            stat = source.stat()
             request = {
+                "serial": "phone",
                 "accounts": [
                     {
                         "account": 2,
+                        "email": "two@example.com",
                         "ipa": str(source),
-                        "file_identity": {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns},
+                        "file_identity": identity(source),
                     }
-                ]
+                ],
             }
             (job / "backend-job.json").write_text(json.dumps(request))
             source.write_bytes(b"new-content")
             config = configured(
                 {
+                    "device": {"serial": "phone"},
                     "automation": {
+                        "ipa_directory": str(job),
                         "pending_ipa_installs": {"2": "New"},
                         "accounts": [
                             {"email": "one@example.com", "ipa": "One"},
                             {"email": "two@example.com", "ipa": "New"},
                             {"email": "three@example.com", "ipa": "Three"},
                         ],
-                    }
+                    },
                 }
             )
             with (
@@ -57,7 +111,7 @@ class AssignmentTests(unittest.TestCase):
             root = Path(directory)
             source = root / "New App.ipa"
             with zipfile.ZipFile(source, "w") as archive:
-                archive.writestr("Payload/New.app/Info.plist", b"plist")
+                write_sample_app(archive, "Payload/New.app/Info.plist")
             initial = configured(
                 {"device": {"serial": "phone"}, "automation": {"ipa_directory": directory}}
             )
@@ -74,21 +128,33 @@ class AssignmentTests(unittest.TestCase):
     def test_only_verified_full_install_clears_pending_assignment(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            source = root / "New.ipa"
+            source.write_bytes(b"fixture")
             config = configured(
                 {
+                    "device": {"serial": "phone"},
                     "automation": {
+                        "ipa_directory": str(root),
                         "accounts": [
                             {"email": "one@example.com", "ipa": "One"},
                             {"email": "two@example.com", "ipa": "New"},
                             {"email": "three@example.com", "ipa": "Three"},
-                        ]
-                    }
+                        ],
+                    },
                 }
             )
             mark_pending(config, 1, "New")
             request = {
+                "serial": "phone",
                 "profile_refresh": True,
-                "accounts": [{"account": 2, "ipa": str(root / "New.ipa")}],
+                "accounts": [
+                    {
+                        "account": 2,
+                        "email": "two@example.com",
+                        "ipa": str(source),
+                        "file_identity": identity(source),
+                    }
+                ],
             }
             (root / "backend-job.json").write_text(json.dumps(request))
             with (

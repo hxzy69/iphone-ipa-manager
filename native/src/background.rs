@@ -112,6 +112,9 @@ async fn login(
     email: &str,
     server: &str,
 ) -> Result<isideload::sideload::sideloader::Sideloader<MaxCertsCallbackBox>, Report> {
+    if !server.starts_with("https://") {
+        bail!("Apple authentication requires an HTTPS anisette server");
+    }
     let password = keyring::Entry::new("iloader", email)?.get_password()?;
     let two_factor = |_params| {
         async {

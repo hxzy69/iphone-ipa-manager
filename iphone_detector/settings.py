@@ -41,6 +41,8 @@ def get_workflow(config=None):
     for index, entry in enumerate(overrides):
         if not isinstance(entry, dict):
             raise ValueError("Invalid settings for account %d." % (index + 1))
+        if not isinstance(entry.get("email"), str) or not isinstance(entry.get("ipa"), str):
+            raise ValueError("Account email and IPA filename must be text.")
         email = str(entry.get("email", "")).strip().lower()
         if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
             raise ValueError("Invalid email for account %d." % (index + 1))

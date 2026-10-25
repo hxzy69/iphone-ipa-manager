@@ -6,15 +6,19 @@ same saved assignments and job status.
 
 ## Download
 
-[**Download for Windows 11 (x64) — 0.2.0 preview**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.2.0-preview/iPhoneIPAManager-0.2.0-windows-x64.zip)
+[**Download Windows installer — 0.3.0**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/iPhoneIPAManager-0.3.0-setup-x64.exe)
 
-[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.2.0-preview)
-· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.2.0-preview/iPhoneIPAManager-0.2.0-source.zip)
-· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.2.0-preview/SHA256SUMS.txt)
+[Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/iPhoneIPAManager-0.3.0-windows-x64.zip)
 
-Extract the ZIP and run `iPhoneIPAManager.exe`. Python is not required.
+[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.3.0-preview)
+· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/iPhoneIPAManager-0.3.0-source.zip)
+· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/SHA256SUMS.txt)
 
-**Release status: 0.2.0 preview.** The existing installation engine has device
+Run the setup EXE, or extract the portable ZIP and run `iPhoneIPAManager.exe`. Python is not required. The setup is per-user and does not request elevation.
+
+[Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.0-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
+
+**Release status: 0.3.0 preview.** The existing installation engine has device
 testing behind it. This public distribution introduces clean onboarding and a
 smaller native helper; its validation and remaining device checks are recorded
 in [release validation](docs/VALIDATION.md). Experimental remote renewal is not
@@ -28,24 +32,24 @@ a guarantee that an app will remain usable indefinitely.
    `iPhoneIPAManager.exe`. Python is not required for the standalone release.
 3. Choose a folder for your IPA files, then **Save settings**. Copy completed IPA
    files there using any transfer tool.
-4. Click **Select connected iPhone**, then **Add Apple account**. Sign in locally,
+4. Click **Connections → Pair connected iPhone**, then **Add Apple account**. Sign in locally,
    complete Apple's verification, and choose an IPA to assign to that account.
-5. Click **Check setup**, then **Run now** for USB installation. The app works in
+5. Click **Check setup**, then **Install apps** for USB installation. The app works in
    the background; **Stop** requests cancellation.
 
 Start with USB. Set up local Wi-Fi, remote access, Discord, and automatic renewal
 after the first installation works. The app includes an offline **Setup guide**.
 
-Desktop **About and updates** and Discord `/updates` show the running version and
+Desktop **Help & updates** and Discord `/updates` show the running version and
 check official releases. See [updating the app](docs/UPDATING.md) for upgrading
 without losing settings and for restarting background components safely.
 
 ## What it does
 
-The 0.2.0 release includes a shared [dashboard, queue, partial-run recovery
-and configuration backup](docs/DASHBOARD_AND_QUEUE.md), plus verified
-side-by-side updates. Upgrading from 0.1.2 or earlier requires a manual first
-upgrade; see the [updating guide](docs/UPDATING.md).
+The 0.3.0 release combines a redesigned desktop, per-user installer, and all
+reliability improvements developed since public 0.2.0. See the [complete
+changelog](CHANGELOG.md), [installation guide](docs/INSTALLING.md), and
+[dashboard/queue guide](docs/DASHBOARD_AND_QUEUE.md).
 
 - Keeps an ordered list of up to 25 accounts, each assigned one IPA. Apple limits
   on apps, certificates, devices and App IDs still apply.
@@ -69,7 +73,7 @@ upgrade; see the [updating guide](docs/UPDATING.md).
 | --- | --- |
 | Local Wi-Fi installation | [Connection guide](docs/CONNECTIONS.md): Apple Wi-Fi sync and a separately installed fixed-purpose bridge service |
 | Remote use through Tailscale | **Remote setup**, then establish a ready tunnel on home Wi-Fi before leaving |
-| Private Discord commands | **Discord setup** and [Discord guide](docs/DISCORD.md) |
+| Private Discord commands | **Discord control** and [Discord guide](docs/DISCORD.md) |
 | Automatic renewal | Install all assigned apps first, verify remote refresh works, then use **Automatic renewal** or `/autorefresh` |
 
 The app never launches an administrator approval prompt. Installing Apple device
@@ -92,6 +96,11 @@ turning on the PC without signing in does not start the user-owned tasks.
 | `/status`, `/history`, `/check` | Connection, progress, receipts and setup checks |
 | `/settings`, `/autorefresh` | View or adjust supported preferences and scheduling |
 | `/stop` | Request safe cancellation of an active job |
+| `/dashboard`, `/queue` | View verified outcomes or queue work until connectivity is available |
+| `/retry` | Queue full installs for unfinished accounts with unchanged assignments |
+| `/backup` | Export assignments/preferences or confirm a restore |
+| `/updates`, `/update` | Check releases, prepare a verified update, activate or roll back |
+| `/diagnostics`, `/maintenance` | Export redacted health information, check disk space or clean old logs |
 
 Account and file options offer autocomplete. Commands are restricted to one
 configured owner, server and channel. Local sign-in avoids sending your Apple
@@ -152,6 +161,8 @@ whether Tailscale uses a relay. A profile readback is not proof that an app will
 launch after the previous profile expires. See [known limits](docs/CONNECTIONS.md).
 
 Read [SECURITY.md](SECURITY.md) before sharing logs or reporting a security issue.
+See [data and privacy](docs/PRIVACY.md) and [troubleshooting](docs/SUPPORT.md) for
+storage, external integrations, maintenance and recovery guidance.
 Contributions are covered by [CONTRIBUTING.md](CONTRIBUTING.md). The public application is
 GPL-3.0-or-later; third-party components retain their licenses in [NOTICE.md](NOTICE.md).
 

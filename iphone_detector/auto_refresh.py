@@ -10,6 +10,7 @@ import subprocess
 import time
 
 from iphone_detector.paths import DATA_ROOT
+from iphone_detector.com_runtime import initialize, uninitialize
 
 INTERVAL = 6 * 24 * 60 * 60
 TASK_NAME = "iPhone IPA Community Automatic Refresh"
@@ -54,11 +55,12 @@ def schedule_snapshot():
             raise ValueError("Renewal state needs local repair: " + path.name) from exc
         if not isinstance(value, dict):
             raise ValueError("Renewal state needs local repair: " + path.name)
-        for key in ("anchor", "at", "started_at", "completed_at"):
+        for key in ("anchor", "at", "started_at", "completed_at", "next_due"):
             if key in value and (
                 type(value[key]) not in (int, float)
                 or not math.isfinite(value[key])
                 or value[key] < 0
+                or (key != "next_due" and value[key] > time.time() + 300)
             ):
                 raise ValueError("Invalid renewal timestamp: " + path.name)
         values.append(value)
@@ -78,18 +80,97 @@ def schedule_snapshot():
         )
     ):
         raise ValueError("Renewal state needs local repair; automatic installation is paused.")
+    selection = success.get("selection")
+    if selection is not None and not isinstance(selection, dict):
+        raise ValueError("Renewal state needs local repair: " + SUCCESS.name)
+    if success and selection is None:
+        # Older versions saved only the job path. Recover its identity rather than
+        # allowing a timer from another phone or assignment to postpone renewal.
+        from iphone_detector.operations import verified_job
+
+        saved_job = success.get("job")
+        job = Path(saved_job) if isinstance(saved_job, str) and saved_job else None
+        if job is not None and verified_job(job, read(job / "result.json")):
+            selection = read(job / "selection.json") or read(job / "backend-job.json")
+            success = dict(success, selection=selection)
+        else:
+            success = {}
+            config = dict(config, anchor=min(config.get("anchor", 0), time.time() - INTERVAL))
+    if selection is not None:
+        from iphone_detector.config import load_config
+        from iphone_detector.background import make_job
+        from iphone_detector.operations import selection_matches
+
+        try:
+            current = make_job(load_config() or {}, "Network", verify_content=False)
+            matches = selection_matches(selection, current, content=False)
+        except OSError, ValueError, TypeError:
+            matches = False
+        if not matches:
+            # A new phone/assignment cannot inherit the previous selection's timer.
+            success = {}
+            config = dict(config, anchor=min(config.get("anchor", 0), time.time() - INTERVAL))
     return config, success, state
 
 
+def due_time(config, success):
+    return min(
+        float(success.get("at", config["anchor"])) + INTERVAL,
+        float(success.get("next_due", float("inf"))),
+    )
+
+
+def success_receipt(job, at, selection):
+    from iphone_detector.operations import account_status
+    from iphone_detector.config import load_config
+
+    value = {"at": at, "job": str(job), "selection": selection}
+    outcomes = account_status(DATA_ROOT, load_config() or {})
+    expiries = [
+        r["profile_expires_at"]
+        for r in outcomes.values()
+        if type(r.get("profile_expires_at")) in (int, float)
+    ]
+    if expiries:
+        value["next_due"] = max(0, min(at + INTERVAL, min(expiries) - 24 * 60 * 60))
+    return value
+
+
+def seed_success():
+    """Find a matching completed run without inheriting a stale or future timer."""
+    from iphone_detector.operations import jobs, verified_job
+
+    newest = None
+    now = time.time()
+    for job in jobs(DATA_ROOT, limit=None):
+        try:
+            at = (job / "result.json").stat().st_mtime
+            if not 0 <= at <= now or (newest is not None and at <= newest[0]):
+                continue
+            if not verified_job(job, read(job / "result.json")):
+                continue
+            selection = read(job / "selection.json") or read(job / "backend-job.json")
+            newest = (at, job, selection)
+        except OSError:
+            continue
+    if newest is None:
+        return None
+    at, job, selection = newest
+    return success_receipt(job, at, selection)
+
+
 def record_success(job, result):
-    if verified_success(result):
+    from iphone_detector.operations import verified_job
+
+    if verified_job(Path(job), result):
         from iphone_detector.remote_tunnel import atomic
 
         try:
             at = (Path(job) / "result.json").stat().st_mtime
         except OSError:
             at = time.time()
-        atomic(SUCCESS, {"at": at, "job": str(job)})
+        selection = read(Path(job) / "selection.json") or read(Path(job) / "backend-job.json")
+        atomic(SUCCESS, success_receipt(job, at, selection))
     elif result.get("ok") is True and not result.get("prepared_only"):
         from iphone_detector.config import load_config
         from iphone_detector.operations import account_status
@@ -106,9 +187,11 @@ def record_success(job, result):
         )
         earliest = min(receipt["at"] for receipt in outcomes.values())
         if threshold < earliest <= time.time() < earliest + INTERVAL:
-            write_json(
-                SUCCESS, {"at": earliest, "job": str(job), "combined_verified_accounts": True}
-            )
+            from iphone_detector.background import make_job
+
+            value = success_receipt(job, earliest, make_job(config, "Network"))
+            value["combined_verified_accounts"] = True
+            write_json(SUCCESS, value)
 
 
 def recover_completed(state):
@@ -121,19 +204,22 @@ def recover_completed(state):
     job = Path(state["pending_job"])
     receipt = job / "result.json"
     result = read(receipt)
-    if not verified_success(result):
+    from iphone_detector.operations import verified_job
+
+    if not verified_job(job, result):
         return False
     try:
         completed_at = receipt.stat().st_mtime
     except OSError:
         return False
-    if completed_at < state.get("started_at", 0):
+    if completed_at < state.get("started_at", 0) or completed_at > time.time() + 300:
         return False
     from iphone_detector.remote_tunnel import atomic
 
     # Preserve the real completion time rather than postponing renewal to reboot time.
     if read(SUCCESS).get("at", 0) < completed_at:
-        atomic(SUCCESS, {"at": completed_at, "job": str(job)})
+        selection = read(job / "selection.json") or read(job / "backend-job.json")
+        atomic(SUCCESS, success_receipt(job, completed_at, selection))
     atomic(STATE, {"completed_job": str(job), "completed_at": completed_at, "recovered": True})
     from iphone_detector.discord_outbox import enqueue
 
@@ -151,7 +237,7 @@ def decision(config, success, state, now, ready, busy):
     last = float(success.get("at", config["anchor"]))
     if state.get("pending_job") and last <= state.get("started_at", 0):
         return "attention"
-    if now < last + INTERVAL:
+    if now < due_time(config, success):
         return "scheduled"
     if busy:
         return "busy"
@@ -173,9 +259,9 @@ def describe():
         except OSError:
             pass
         return "Automatic refresh needs attention. Inspect the last job; a successful /refresh or /sideload resumes the schedule."
-    due = float(success.get("at", config["anchor"])) + INTERVAL
+    due = due_time(config, success)
     if time.time() >= due:
-        return "Automatic refresh due; waiting for an available tunnel and no active installation."
+        return "Automatic refresh due; waiting for a verified phone connection and no active installation."
     return (
         "Automatic refresh due "
         + datetime.fromtimestamp(due).astimezone().strftime("%d %b %H:%M %Z")
@@ -216,20 +302,22 @@ def tick():
         guard.close()
         if available and recover_completed(state):
             success, state = read(SUCCESS), read(STATE)
-        action = decision(
-            config,
-            success,
-            state,
-            time.time(),
-            remote_tunnel.enabled() and remote_tunnel.state()["state"] == "ready",
-            not available,
-        )
+        from iphone_detector.connection_router import route_ready
+
+        action = decision(config, success, state, time.time(), False, not available)
+        if action == "waiting":
+            try:
+                ready = route_ready(refresh=True)
+            except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
+                LOG.exception("Renewal connectivity check failed; deferred to a later check.")
+                ready = False
+            action = decision(config, success, state, time.time(), ready, not available)
         remote_tunnel.atomic(
             DATA_ROOT / "auto-refresh-check.json",
             {
                 "checked_at": time.time(),
                 "status": action,
-                "next_due": float(success.get("at", config["anchor"])) + INTERVAL,
+                "next_due": due_time(config, success),
             },
         )
         if action != "due":
@@ -271,7 +359,9 @@ def tick():
             return
         exit_code = process.wait()
         result = read(job / "result.json")
-        if exit_code == 0 and verified_success(result):
+        from iphone_detector.operations import verified_job
+
+        if exit_code == 0 and verified_job(job, result):
             record_success(job, result)
             remote_tunnel.atomic(STATE, {"completed_job": str(job), "completed_at": time.time()})
             from iphone_detector.discord_outbox import enqueue
@@ -286,6 +376,8 @@ def tick():
         elif (
             not (job / "remote-request.json").exists()
             and not (job / "backend-events.jsonl").exists()
+            and not (job / "native-dispatch.json").exists()
+            and not (job / "native-input.json").exists()
         ):
             # Preflight rejected this run before submitting any phone/account work.
             remote_tunnel.atomic(STATE, {"deferred_job": str(job)})
@@ -319,14 +411,13 @@ def configure(enabled):
 
         if not get_workflow():
             raise ValueError("Add and install an Apple account before enabling automatic renewal.")
-    import pythoncom
     import win32com.client
     from iphone_detector.bridge_service import current_sid
     from iphone_detector.discord_bot import command
     from iphone_detector.remote_tunnel import atomic
 
     config = schedule_snapshot()[0] if enabled else read(CONFIG)
-    pythoncom.CoInitialize()
+    com_owned = initialize()
     scheduler = folder = task = trigger = action = None
     try:
         scheduler = win32com.client.Dispatch("Schedule.Service")
@@ -334,14 +425,9 @@ def configure(enabled):
         folder = scheduler.GetFolder("\\")
         if enabled:
             if not read(SUCCESS):
-                previous = []
-                for receipt in (DATA_ROOT / "automation-runs").glob("*/result.json"):
-                    result = read(receipt)
-                    if verified_success(result):
-                        previous.append((receipt.stat().st_mtime, str(receipt.parent)))
+                previous = seed_success()
                 if previous:
-                    at, job = max(previous)
-                    atomic(SUCCESS, {"at": at, "job": job})
+                    atomic(SUCCESS, previous)
             owner = current_sid()
             task = scheduler.NewTask(0)
             task.RegistrationInfo.Description = "Check every 15 minutes; renew iPhone apps six days after the last successful renewal."
@@ -360,11 +446,13 @@ def configure(enabled):
             task.Settings.Hidden = True
             task.Settings.DisallowStartIfOnBatteries = False
             task.Settings.StopIfGoingOnBatteries = False
-            task.Settings.ExecutionTimeLimit = "PT1H"
+            # The worker applies per-account signing/transfer deadlines. A fixed
+            # one-hour supervisor limit can kill a valid 25-account workflow.
+            task.Settings.ExecutionTimeLimit = "PT0S"
             task.Settings.MultipleInstances = 2
             folder.RegisterTaskDefinition(TASK_NAME, task, 6, owner, None, 3)
         else:
-            for saved in folder.GetTasks(0):
+            for saved in folder.GetTasks(1):
                 if saved.Name == TASK_NAME:
                     folder.DeleteTask(TASK_NAME, 0)
                     break
@@ -373,7 +461,7 @@ def configure(enabled):
         )
     finally:
         action = trigger = task = folder = scheduler = None
-        pythoncom.CoUninitialize()
+        uninitialize(com_owned)
 
 
 def run():

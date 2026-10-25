@@ -49,6 +49,22 @@ def read_pair(serial):
     return plistlib.loads(matches[0].read_bytes())
 
 
+def pairing_identifier(serial):
+    """Use the record's original identifier for APIs with exact cache-key matching."""
+    from pymobiledevice3.pair_records import iter_remote_pair_records_by_identifier
+
+    matches = {
+        identifier
+        for identifier, _, _ in iter_remote_pair_records_by_identifier()
+        if canonical_serial(identifier) == canonical_serial(serial)
+    }
+    if len(matches) > 1:
+        raise ValueError(
+            "Multiple remote pairing records match this phone. Review pairing locally before reconnecting."
+        )
+    return next(iter(matches), serial)
+
+
 def tls_context(pair):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False

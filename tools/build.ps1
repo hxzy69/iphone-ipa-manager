@@ -49,15 +49,19 @@ try {
     Invoke-Checked $python @('-m', 'ruff', 'check', '.')
     Invoke-Checked $python @('-m', 'ruff', 'format', '--check', '.')
     Invoke-Checked $python @('tools/test.py')
+    Invoke-Checked $python @('tools/security_audit.py')
     Invoke-Checked $python @('tools/audit_release.py')
     Invoke-Checked $python @('-m', 'PyInstaller', '--noconfirm', '--distpath', 'dist', '--workpath', 'build', 'iPhoneIPAManager.spec')
     Copy-Item -LiteralPath 'docs/START_HERE.html' -Destination 'dist/START_HERE.html'
     Copy-Item -LiteralPath 'LICENSE' -Destination 'dist/LICENSE.txt'
     Copy-Item -LiteralPath 'NOTICE.md' -Destination 'dist/NOTICE.md'
     Invoke-Checked $python @('tools/collect_licenses.py')
+    Copy-Item -LiteralPath 'artifacts/dependency-audit.json' -Destination 'dist/dependency-audit.json'
+    Copy-Item -LiteralPath 'artifacts/sbom.cdx.json' -Destination 'dist/sbom.cdx.json'
     $report = Join-Path $projectRoot 'dist\self-test.json'
     $check = Start-Process -FilePath 'dist/iPhoneIPAManager.exe' -ArgumentList @('--self-test', '--report-file', ('"' + $report + '"')) -WindowStyle Hidden -Wait -PassThru
     if ($check.ExitCode -ne 0) { throw 'Packaged runtime self-test failed.' }
     Invoke-Checked $python @('tools/package_release.py')
+    Invoke-Checked 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'tools/build_installer.ps1', '-Python', $python)
     Write-Host 'Build complete. Review dist/self-test.json and docs/VALIDATION.md before publishing.'
 } finally { Pop-Location }

@@ -16,7 +16,12 @@ isolation can block discovery even when both devices have internet access.
 Windows may separately ask about firewall network access. The application does
 not dismiss that request or change firewall permissions automatically.
 
-The local bridge temporarily manages Apple's USB service through a narrowly
+After trusted Remote setup, the manager can use a direct LAN RemotePairing route
+without the legacy bridge. It authenticates the on-link phone before choosing
+that route. A persistent remote tunnel does not have to be ready for this local
+route to work. USB remains the simplest initial setup and recovery path.
+
+The optional legacy local bridge temporarily manages Apple's USB service through a narrowly
 scoped Windows service, then restores it. The application does not request
 elevation. To install that service, a local administrator must deliberately open
 an elevated terminal. First obtain the intended ordinary user's SID from that
@@ -61,8 +66,9 @@ Do not share it or copy it into the repository.
 - Roaming, iOS suspension, device restarts and VPN changes can close a tunnel.
 - Full installs transfer signed archives. Remote speed has no fixed multiplier;
   profile-only renewal is smaller when its compatibility checks pass.
-- Renewal needs a ready remote transport in this version, even at home. Full
-  local Wi-Fi installation can work independently of that transport.
+- Renewal prefers authenticated USB, then supported local Wi-Fi services or a
+  configured direct LAN tunnel, then the persistent remote transport. Local and
+  remote readiness are verified separately.
 - Known rejected or expired profiles can fall back to a full install. Unknown
   write outcomes stop and need inspection. A successful profile readback is
   experimental evidence, not a substitute for testing app launches after expiry.

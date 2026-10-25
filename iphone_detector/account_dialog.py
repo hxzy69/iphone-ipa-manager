@@ -4,6 +4,7 @@ import asyncio
 import queue
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox, ttk
 
 from iphone_detector.account_login import LoginSession, append_account, email_address
@@ -11,9 +12,14 @@ from iphone_detector.discord_inbox import managed_files
 
 
 class AccountDialog:
-    def __init__(self, parent, config, on_saved):
+    def __init__(self, parent, config, on_saved, *, preview=False):
+        self.preview = preview
         self.on_saved = on_saved
-        self.files = managed_files(config)
+        self.files = (
+            [Path("Sample Video.ipa"), Path("Sample Music.ipa")]
+            if preview
+            else managed_files(config)
+        )
         if not self.files:
             raise ValueError("Put an IPA in your saved IPA folder before adding an account.")
         self.events = queue.Queue()
@@ -28,16 +34,20 @@ class AccountDialog:
         self.window.transient(parent)
         self.window.grab_set()
         self.window.protocol("WM_DELETE_WINDOW", self.cancel)
-        panel = ttk.Frame(self.window, padding=24)
-        panel.pack(fill="both", expand=True)
-        ttk.Label(panel, text="Add an Apple account", font=("Segoe UI", 18, "bold")).pack(
-            anchor="w"
+        from iphone_detector.dialog_ui import shell
+
+        panel, _ = shell(
+            self.window,
+            "Add an Apple account",
+            "1. Sign in   →   2. Verify with Apple   →   3. Save assignment",
+            width=640,
+            height=740,
+            close=self.cancel,
         )
         ttk.Label(
             panel,
-            text="Sign in locally, verify with Apple, then save an IPA assignment.\n"
-            "Passwords go to the native helper through a private pipe and are saved\n"
-            "in Windows Credential Manager after successful verification.",
+            text="Choose the app this account will manage. Signing in does not install anything. "
+            "After verification, your password is stored in Windows Credential Manager.",
             wraplength=550,
         ).pack(anchor="w", pady=(8, 12))
         self.email = tk.StringVar()
@@ -70,6 +80,15 @@ class AccountDialog:
         self.window.after(100, self.poll)
 
     def start(self):
+        if getattr(self, "preview", False):
+            from types import SimpleNamespace
+
+            self.session = SimpleNamespace(challenge=1)
+            self.show_challenge({"numbers": [{"id": 1, "last_digits": "42"}]})
+            self.status.set(
+                "Sample verification screen. No sign-in request was sent; enter any six digits to try it."
+            )
+            return
         if self.running:
             return
         try:
@@ -120,6 +139,9 @@ class AccountDialog:
         threading.Thread(target=run, daemon=True, name="local-apple-sign-in").start()
 
     def respond(self, value):
+        if getattr(self, "preview", False):
+            self.status.set("Sample verification complete. No account or credentials were saved.")
+            return
         if self.session is None or self.loop is None or self.challenge is None:
             return
         number, self.challenge = self.challenge, None

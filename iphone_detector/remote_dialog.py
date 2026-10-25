@@ -7,16 +7,22 @@ from tkinter import ttk
 
 
 class RemoteDialog:
-    def __init__(self, parent):
+    def __init__(self, parent, *, preview=False):
+        self.preview = preview
         self.window = tk.Toplevel(parent)
         self.window.title("Remote connection setup")
         self.window.geometry("650x400")
         self.window.transient(parent)
-        panel = ttk.Frame(self.window, padding=22)
-        panel.pack(fill="both", expand=True)
-        ttk.Label(panel, text="Optional remote connection", font=("Segoe UI", 17, "bold")).pack(
-            anchor="w"
+        from iphone_detector.dialog_ui import shell, section
+
+        panel, _ = shell(
+            self.window,
+            "Remote connection",
+            "Optional: manage your iPhone when you are away from home.",
+            width=700,
+            height=560,
         )
+        section(panel, "Before you start")
         ttk.Label(
             panel,
             text="Install Tailscale on both devices and sign in to the same network.\n"
@@ -40,6 +46,11 @@ class RemoteDialog:
         self.window.after(200, self.poll)
 
     def start(self):
+        if self.preview:
+            self.status.set(
+                "Sample result: pairing verified. Wait for Remote tunnel ready before leaving home Wi-Fi. Nothing was saved."
+            )
+            return
         address = self.address.get().strip() or None
         self.button.configure(state="disabled")
         self.status.set("Verifying pairing and VPN listener. Allow up to 90 seconds…")

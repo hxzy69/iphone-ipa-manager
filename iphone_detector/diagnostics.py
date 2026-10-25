@@ -46,8 +46,17 @@ def report():
         result["renewal_pending"] = bool(state.get("pending_job"))
         anchor = success.get("at", config.get("anchor"))
         result["renewal_overdue"] = (
-            time.time() >= anchor + auto_refresh.INTERVAL if anchor is not None else None
+            time.time() >= auto_refresh.due_time(config, success) if anchor is not None else None
         )
     except Exception:
         result["automatic_renewal"] = "unreadable"
+    from iphone_detector.job_history import read
+
+    result["last_service_exits"] = {}
+    for component in ("queue", "renewal", "discord", "remote"):
+        value = read(DATA_ROOT / (component + "-service.json")).get("state")
+        # This is exit history, not a claim that a process is currently healthy.
+        result["last_service_exits"][component] = (
+            value if value in ("failed", "stopped") else "unknown"
+        )
     return result

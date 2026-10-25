@@ -8,6 +8,7 @@ import tkinter as tk
 import unittest
 from unittest.mock import Mock, patch
 import zipfile
+from fixtures import write_sample_app
 
 from iphone_detector import account_login, auto_refresh, gui, paths, settings
 from iphone_detector.account_dialog import AccountDialog
@@ -17,7 +18,7 @@ from iphone_detector.setup import preflight
 def sample_ipa(folder, name="ExampleApp.ipa"):
     path = folder / name
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("Payload/Example.app/Info.plist", b"example")
+        write_sample_app(archive, "Payload/Example.app/Info.plist")
     return path
 
 

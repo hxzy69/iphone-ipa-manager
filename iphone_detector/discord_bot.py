@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import time
 
 from iphone_detector.paths import DATA_ROOT, ASSET_ROOT, FROZEN
@@ -18,6 +19,8 @@ LOG = logging.getLogger("iphone-detector.discord")
 
 
 def validate_settings(settings):
+    if not isinstance(settings, dict):
+        raise ValueError("Discord settings must be a JSON object. Repair the local configuration.")
     for name in ("user_id", "guild_id", "channel_id"):
         value = str(settings.get(name, ""))
         if not value.isdecimal() or not 0 < int(value) < 2**64:
@@ -112,6 +115,32 @@ class Controller:
         self.refresh = False
         self.accounts = None
         self.expected = 0
+        self.starting = False
+        self._cancel_start = threading.Event()
+        self._launch_lock = threading.Lock()
+
+    async def start_async(self, refresh=False, accounts=None):
+        """Keep discovery and IPA hashing off the Discord gateway event loop."""
+        if self.starting:
+            raise RuntimeError("An installation is already starting.")
+        self.starting = True
+        self._cancel_start.clear()
+        worker = asyncio.create_task(
+            asyncio.to_thread(self.start, refresh=refresh, accounts=accounts)
+        )
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # Cancelling an await cannot kill its thread. Withdraw launch permission
+            # and wait for preflight to finish before accepting another request.
+            self.stop()
+            try:
+                await worker
+            except Exception:
+                LOG.info("Cancelled Discord installation startup finished.")
+            raise
+        finally:
+            self.starting = False
 
     def start(self, refresh=False, accounts=None):
         if refresh and accounts is not None:
@@ -126,16 +155,27 @@ class Controller:
         from iphone_detector.settings import get_workflow
         from iphone_detector import remote_tunnel
 
-        if refresh and (not remote_tunnel.enabled() or remote_tunnel.state()["state"] != "ready"):
-            raise RuntimeError(
-                "Profile refresh needs a ready remote tunnel. Use /status to check it."
-            )
-        if remote_tunnel.enabled():
+        if refresh:
+            from iphone_detector.connection_router import route_ready
+
+            if not route_ready(refresh=True):
+                raise RuntimeError(
+                    "Refresh needs an authenticated local phone or a ready remote tunnel. Use /queue to wait for connectivity."
+                )
+        if not refresh and remote_tunnel.enabled():
             remote_tunnel.ensure_started()
             if not installed() and remote_tunnel.state()["state"] != "ready":
-                raise RuntimeError(remote_tunnel.describe())
-        elif not installed():
-            raise RuntimeError("Install the Wi-Fi service using Discord setup on the PC first.")
+                from iphone_detector.connection_router import route_ready
+
+                if not route_ready():
+                    raise RuntimeError(remote_tunnel.describe())
+        elif not refresh and not installed():
+            from iphone_detector.connection_router import route_ready
+
+            if not route_ready():
+                raise RuntimeError(
+                    "Connect the paired iPhone by USB, or configure a local/remote connection. Use /queue to wait for connectivity."
+                )
         chosen = selected_accounts(get_workflow(load_config() or {}), accounts)
         request = make_job(load_config() or {}, "Network", accounts=accounts)
         self.job = (
@@ -163,21 +203,31 @@ class Controller:
         ]
         for account in chosen if not refresh and accounts is not None else []:
             arguments += ["--account", str(account + 1)]
-        self.process = subprocess.Popen(
-            command(arguments), creationflags=subprocess.CREATE_NO_WINDOW
-        )
+        with self._launch_lock:
+            if self._cancel_start.is_set():
+                raise RuntimeError("Installation cancelled before launch; no device work started.")
+            self.process = subprocess.Popen(
+                command(arguments), creationflags=subprocess.CREATE_NO_WINDOW
+            )
         self.state = (
             "Selecting the fastest available iPhone connection."
-            if remote_tunnel.enabled()
+            if refresh or remote_tunnel.enabled()
             else "Connecting to the iPhone over Wi-Fi."
         )
 
     def stop(self):
-        if self.process is None or self.process.poll() is not None:
-            return "No Discord installation is running."
-        (self.job / "stop").touch()
-        self.state = "Stopping the installation and cleaning up."
-        return self.state
+        with self._launch_lock:
+            if self.starting:
+                self._cancel_start.set()
+            if self.process is None or self.process.poll() is not None:
+                return (
+                    "Cancelling installation startup."
+                    if self.starting
+                    else "No Discord installation is running."
+                )
+            (self.job / "stop").touch()
+            self.state = "Stopping the installation and cleaning up."
+            return self.state
 
     def progress(self):
         path = self.job / "backend-events.jsonl"
@@ -189,7 +239,7 @@ class Controller:
                 event = json.loads(line)
             except ValueError:
                 continue
-            if not isinstance(event, dict):
+            if not isinstance(event, dict) or not isinstance(event.get("stage"), str):
                 continue
             labels = {
                 "login": "Signing in",
@@ -265,6 +315,9 @@ def run():
     except Exception:
         LOG.exception("Tunnel startup failed; keeping Discord controls available for diagnosis.")
     settings, token = load_settings()
+    from iphone_detector.activation_health import ready
+
+    ready("discord")
     controller = Controller()
     stop_file = DATA_ROOT / "discord-stop"
     stop_file.unlink(missing_ok=True)
@@ -358,7 +411,7 @@ def run():
                 """Start a single-account install from a picker; reports in the channel."""
                 await install_interaction.response.defer(ephemeral=True)
                 try:
-                    controller.start(accounts=[index])
+                    await controller.start_async(accounts=[index])
                     controller.task = asyncio.create_task(report(install_interaction.channel))
                     await install_interaction.followup.send(
                         "Started installing account %d only. "
@@ -394,7 +447,9 @@ def run():
                     return
                 await interaction.response.defer(ephemeral=True)
                 try:
-                    controller.start(accounts=[account - 1] if account is not None else None)
+                    await controller.start_async(
+                        accounts=[account - 1] if account is not None else None
+                    )
                     controller.task = asyncio.create_task(report(interaction.channel))
                     await interaction.followup.send(
                         "Started. I’ll report the result in this channel.", ephemeral=True
@@ -444,7 +499,7 @@ def run():
                     return
                 await interaction.response.defer(ephemeral=True)
                 try:
-                    controller.start(refresh=True)
+                    await controller.start_async(refresh=True)
                     controller.task = asyncio.create_task(report(interaction.channel))
                     await interaction.followup.send(
                         "Refresh started. Preparing profiles locally, then renewing the installed apps. "

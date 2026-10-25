@@ -6,9 +6,12 @@ import io
 import json
 from pathlib import Path, PurePosixPath
 import zipfile
+import stat
 
 
 def verify_receipt(receipt, executable, expected_version=None):
+    if not isinstance(receipt, dict):
+        raise ValueError("Self-test receipt must be a JSON object.")
     checks = receipt.get("checks")
     if (
         receipt.get("ok") is not True
@@ -37,7 +40,15 @@ def verify_members(archive):
         # On Windows ZipInfo normalizes backslashes in filename; retain the raw name.
         name = member.orig_filename
         path = PurePosixPath(name)
-        if path.is_absolute() or ".." in path.parts or "\\" in name or ":" in name:
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or "\\" in name
+            or ":" in name
+            or any(ord(char) < 32 for char in name)
+            or stat.S_ISLNK(member.external_attr >> 16)
+            or member.flag_bits & 1
+        ):
             raise ValueError("Archive contains an unsafe member path.")
         for part in path.parts:
             stem = part.split(".")[0].upper()

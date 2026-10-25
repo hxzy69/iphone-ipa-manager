@@ -56,7 +56,30 @@ def selected_accounts(workflow, accounts=None):
     return sorted(chosen)
 
 
-def make_job(config, transport, check_only=False, accounts=None):
+def resolve_server(config):
+    """Share server preference validation between installation and account sign-in."""
+    server = config.get("automation", {}).get("anisette_server")
+    if server is None:
+        path = Path(os.environ.get("APPDATA", "")) / "me.nabdev.iloader/preferences.json"
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8-sig"))
+        except FileNotFoundError:
+            saved = {}
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                "iloader preferences could not be read. Repair them locally or set an HTTPS anisette server in IPA Manager settings; the original file was preserved."
+            ) from exc
+        if not isinstance(saved, dict):
+            raise ValueError(
+                "iloader preferences must be a JSON object. Repair them locally or set an HTTPS anisette server in IPA Manager settings; the original file was preserved."
+            )
+        server = saved.get("newAnisetteServer", "new.ani.sidestore.io")
+    from iphone_detector.input_integrity import https_server
+
+    return https_server(server)
+
+
+def make_job(config, transport, check_only=False, accounts=None, *, verify_content=True):
     serial = config.get("device", {}).get("serial")
     if not serial:
         raise ValueError("Pair your iPhone by USB first.")
@@ -69,20 +92,17 @@ def make_job(config, transport, check_only=False, accounts=None):
         if not ipa.is_file():
             raise ValueError("IPA file not found: " + str(ipa))
         # The backend keys its per-account artifacts and events by this stable number.
-        stat = ipa.stat()
+        from iphone_detector.input_integrity import identity
+
         entries.append(
             {
                 "email": workflow[index]["email"],
                 "ipa": str(ipa),
                 "account": index + 1,
-                "file_identity": {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns},
+                "file_identity": identity(ipa, digest=verify_content),
             }
         )
-    settings = Path(os.environ.get("APPDATA", "")) / "me.nabdev.iloader/preferences.json"
-    saved = json.loads(settings.read_text(encoding="utf-8")) if settings.exists() else {}
-    server = saved.get("newAnisetteServer", "new.ani.sidestore.io")
-    if not server.startswith(("https://", "http://")):
-        server = "https://" + server
+    server = resolve_server(config)
     return {
         "serial": serial,
         "transport": transport,
@@ -102,9 +122,9 @@ def validate_selection(job, config, accounts=None):
         return
     selected = json.loads(path.read_text(encoding="utf-8"))
     current = make_job(config, "Network", accounts=accounts)
-    if not isinstance(selected, dict) or any(
-        selected.get(key) != current.get(key) for key in ("serial", "accounts")
-    ):
+    from iphone_detector.operations import selection_matches
+
+    if not selection_matches(selected, current):
         raise ValueError(
             "The saved account or IPA changed after this run was requested. Use /accounts, then start a new run."
         )
@@ -113,6 +133,8 @@ def validate_selection(job, config, accounts=None):
 def run_background(
     job, stop, transport="USB", check_only=False, request_override=None, accounts=None
 ):
+    from iphone_detector.input_integrity import snapshot_inputs
+
     config = load_config() or {}
     request = (
         request_override
@@ -131,9 +153,17 @@ def run_background(
         "Starting native background iloader (%s). No window, OCR, clipboard or input automation.",
         transport,
     )
-    with (job / "backend.log").open("w", encoding="utf-8") as output:
+    with (
+        snapshot_inputs(job, request) as prepared,
+        (job / "backend.log").open("w", encoding="utf-8") as output,
+    ):
+        from iphone_detector.storage import write_json
+
+        native_path = job / "native-input.json"
+        write_json(native_path, prepared)
+        write_json(job / "native-dispatch.json", {"started_at": time.time()})
         process = subprocess.Popen(
-            [str(executable), "--background-job", str(request_path)],
+            [str(executable), "--background-job", str(native_path)],
             stdout=output,
             stderr=output,
             creationflags=subprocess.CREATE_NO_WINDOW,
@@ -158,7 +188,13 @@ def run_background(
                             if not line or not line.endswith("\n"):
                                 file.seek(position)
                                 break
-                            data = json.loads(line)
+                            try:
+                                data = json.loads(line)
+                            except ValueError:
+                                LOG.warning("Ignored a malformed backend progress event.")
+                                continue
+                            if not isinstance(data, dict) or not isinstance(data.get("stage"), str):
+                                continue
                             LOG.info(
                                 "[background] %s%s",
                                 data["stage"],
@@ -181,12 +217,17 @@ def run_background(
             result = (
                 json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
             )
+            if not isinstance(result, dict):
+                raise RuntimeError(
+                    "Background iloader returned an invalid completion receipt. Inspect the phone before retrying."
+                )
             expected = (
                 0 if check_only or request.get("prepare_only") else len(request.get("accounts", []))
             )
             if (
                 process.returncode
-                or not result.get("ok")
+                or result.get("ok") is not True
+                or type(result.get("completed_accounts")) is not int
                 or result.get("completed_accounts") != expected
                 or (request.get("prepare_only") and result.get("prepared_only") is not True)
             ):

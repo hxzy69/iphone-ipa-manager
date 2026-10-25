@@ -30,6 +30,25 @@ def installer_assets(version):
     return [name, checksum.name]
 
 
+def verify_tracked_source():
+    """A clean worktree alone does not prove that only public inputs were committed."""
+    from audit_release import source_files, audit
+
+    if not audit(ROOT)["ok"]:
+        raise ValueError("Public source audit failed.")
+    tracked = set(
+        subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT)
+        .decode("utf-8")
+        .rstrip("\0")
+        .split("\0")
+    )
+    allowed = {path.relative_to(ROOT).as_posix() for path in source_files(ROOT)}
+    if tracked != allowed:
+        raise ValueError(
+            "Tracked files must exactly match the public source allowlist before release."
+        )
+
+
 def publish(tag, repository, *, make_public=False):
     from iphone_detector import __version__
     from iphone_detector.release_integrity import verify_release
@@ -50,6 +69,7 @@ def publish(tag, repository, *, make_public=False):
         raise ValueError(
             "Release source has uncommitted changes. Build the clean tag before publishing."
         )
+    verify_tracked_source()
     verify_release(ROOT / "artifacts")
     names = [
         f"iPhoneIPAManager-{__version__}-windows-x64.zip",

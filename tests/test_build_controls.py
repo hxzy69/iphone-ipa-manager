@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -17,6 +18,38 @@ def tool(name):
 
 
 class BuildControlTests(unittest.TestCase):
+    def test_tracked_build_metadata_blocks_publication(self):
+        publisher = tool("publish_release")
+        auditor = tool("audit_release")
+        for tracked, allowed in (
+            (b"README.md\0build-temp/Analysis.toc\0", ["README.md"]),
+            (b"README.md\0", ["README.md", "missing.py"]),
+        ):
+            with (
+                self.subTest(tracked=tracked),
+                patch.dict(sys.modules, {"audit_release": auditor}),
+                patch.object(auditor, "audit", return_value={"ok": True}),
+                patch.object(
+                    auditor,
+                    "source_files",
+                    return_value=[publisher.ROOT / name for name in allowed],
+                ),
+                patch.object(publisher.subprocess, "check_output", return_value=tracked),
+            ):
+                with self.assertRaisesRegex(ValueError, "allowlist"):
+                    publisher.verify_tracked_source()
+
+    def test_exact_tracked_allowlist_passes_publication_boundary(self):
+        publisher = tool("publish_release")
+        auditor = tool("audit_release")
+        with (
+            patch.dict(sys.modules, {"audit_release": auditor}),
+            patch.object(auditor, "audit", return_value={"ok": True}),
+            patch.object(auditor, "source_files", return_value=[publisher.ROOT / "README.md"]),
+            patch.object(publisher.subprocess, "check_output", return_value=b"README.md\0"),
+        ):
+            publisher.verify_tracked_source()
+
     def test_setup_publishing_requires_matching_checksum_and_version(self):
         import hashlib
 

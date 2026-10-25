@@ -24,6 +24,7 @@ class DialogPreviewTests(unittest.TestCase):
             # Exercise both fitting and overflowing content independently of runner resolution.
             for card in app.account_cards.winfo_children():
                 card.destroy()
+            app.account_cards.configure(height=1)
             root.update()
             self.assertFalse(scroll.winfo_ismapped())
             for index in range(3, 20):

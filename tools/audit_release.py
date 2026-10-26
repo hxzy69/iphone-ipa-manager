@@ -65,6 +65,9 @@ TEXT_SUFFIXES = {
     ".ps1",
     ".cs",
     ".html",
+    ".css",
+    ".js",
+    ".svg",
     ".yml",
     ".spec",
 }

@@ -1,12 +1,15 @@
 # iPhone IPA Manager
 
+[**Visit the project website →**](https://hxzy69.github.io/iphone-ipa-manager/)
+Screenshots, feature guide, setup instructions, and Windows downloads.
+
 A Windows desktop app for managing Apple accounts, installing assigned IPA files,
 and renewing provisioning profiles. An optional private Discord bot exposes the
 same saved assignments and job status.
 
 ## Download
 
-[**Download Windows installer — 0.3.0**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.1-preview/iPhoneIPAManager-0.3.1-setup-x64.exe)
+[**Download Windows installer — 0.3.1**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.1-preview/iPhoneIPAManager-0.3.1-setup-x64.exe)
 
 [Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.1-preview/iPhoneIPAManager-0.3.1-windows-x64.zip)
 
@@ -18,7 +21,7 @@ Run the setup EXE, or extract the portable ZIP and run `iPhoneIPAManager.exe`. P
 
 [Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.1-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
 
-**Release status: 0.3.0 preview.** The existing installation engine has device
+**Release status: 0.3.1 preview.** The existing installation engine has device
 testing behind it. This public distribution introduces clean onboarding and a
 smaller native helper; its validation and remaining device checks are recorded
 in [release validation](docs/VALIDATION.md). Experimental remote renewal is not

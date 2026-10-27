@@ -63,6 +63,10 @@ def load_settings():
 
     saved = json.loads(SETTINGS.read_text(encoding="utf-8"))
     settings = validate_settings(saved)
+    if not isinstance(saved.get("token"), str) or not saved["token"]:
+        raise ValueError(
+            "Discord bot token is missing. Open Discord setup and save the token again."
+        )
     token = win32crypt.CryptUnprotectData(base64.b64decode(saved["token"]), None, None, None, 1)[
         1
     ].decode()

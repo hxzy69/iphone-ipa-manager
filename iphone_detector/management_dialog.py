@@ -88,12 +88,13 @@ class ManagementDialog:
         self.startup = tk.BooleanVar(
             value=True if preview else read(DATA_ROOT / "queue-settings.json").get("startup", True)
         )
-        ttk.Checkbutton(
+        self.startup_control = ttk.Checkbutton(
             actions,
             text="Resume at Windows sign-in",
             variable=self.startup,
             command=self.toggle_startup,
-        ).pack(side="left")
+        )
+        self.startup_control.pack(side="left")
         panel = pages["History & recovery"]
         ttk.Label(
             panel,
@@ -184,7 +185,9 @@ class ManagementDialog:
         if not self.window.winfo_exists():
             return
         try:
-            result, error = self.action_events.get_nowait()
+            result, error, on_complete = self.action_events.get_nowait()
+            if on_complete:
+                on_complete(error)
             if error:
                 messagebox.showerror("Dashboard", error, parent=self.window)
             else:
@@ -304,12 +307,12 @@ class ManagementDialog:
             self.health.set("Dashboard needs attention: " + str(exc)[:200])
         self.app.root.after(3000, self.poll)
 
-    def perform(self, operation):
+    def perform(self, operation, on_complete=None):
         def run():
             try:
-                self.action_events.put((operation(), None))
-            except (OSError, ValueError, RuntimeError) as exc:
-                self.action_events.put((None, str(exc)))
+                self.action_events.put((operation(), None, on_complete))
+            except Exception as exc:
+                self.action_events.put((None, str(exc), on_complete))
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -335,13 +338,24 @@ class ManagementDialog:
         self.perform(operation)
 
     def toggle_startup(self):
-        self.startup_value = self.startup.get()
-        self.perform(self.change_startup)
+        requested = self.startup.get()
+        self.startup_control.configure(state="disabled")
 
-    def change_startup(self):
+        def complete(error):
+            if error:
+                from iphone_detector.job_history import read
+
+                self.startup.set(
+                    read(DATA_ROOT / "queue-settings.json").get("startup", not requested)
+                )
+            self.startup_control.configure(state="normal")
+
+        self.perform(lambda: self.change_startup(requested), complete)
+
+    def change_startup(self, enabled):
         from iphone_detector.job_queue import configure_startup
 
-        configure_startup(self.startup_value)
+        configure_startup(enabled)
         return "Queue startup preference saved."
 
     def change(self, action):

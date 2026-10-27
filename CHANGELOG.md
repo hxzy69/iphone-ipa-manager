@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.4 — reliability fixes — 2026-10-27
+
+- Preserve verified completion receipts and pause the queue for review when Wi-Fi bridge cleanup cannot be verified.
+- Keep the desktop status loop running after transient failures, and retain remote setup results while work is in progress.
+- Run queue discovery outside its storage lock, reduce idle probing, and prevent duplicate runner launches and misleading status updates.
+- Improve Windows service and scheduled-task errors, limit restart attempts, and correct startup toggle recovery.
+- Save Discord settings atomically, report missing credentials and update or backup failures, and handle notification results without a receipt.
+- Remove temporary uninstaller copies after they exit, correct account scope and document update-signing limitations and Python requirements.
+- Add regression coverage for recovery, queue concurrency and user interface error handling.
+
 ## 0.3.3 — connection and recovery reliability — 2026-10-27
 
 - Refresh can use the authenticated Wi-Fi bridge when direct local renewal and

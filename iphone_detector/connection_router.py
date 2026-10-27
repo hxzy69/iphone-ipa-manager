@@ -22,6 +22,19 @@ class LocalRefreshUnavailable(RuntimeError):
     """Read-only local preflight failed before any device operation was submitted."""
 
 
+def cleanup_bridge(bridge, completed=None, original_error=None):
+    from iphone_detector.wifi import BridgeCleanupError
+
+    try:
+        bridge.__exit__(None, None, None)
+    except Exception as exc:
+        if original_error is not None:
+            original_error.add_note("Wi-Fi bridge cleanup also failed: " + str(exc))
+            LOG.exception("Wi-Fi bridge cleanup failed while handling an earlier error.")
+            return
+        raise BridgeCleanupError(str(exc), completed_result=completed) from exc
+
+
 def find_usb(serial):
     from iphone_detector.wifi import devices
 
@@ -162,6 +175,7 @@ def run_refresh(job, stop):
                         )
                     LOG.info("Wi-Fi bridge preflight unavailable for renewal.")
                 else:
+                    completed = None
                     try:
                         try:
                             asyncio.run(execute(bridge.device["serial"]))
@@ -173,9 +187,14 @@ def run_refresh(job, stop):
                                 (job / "remote-result.json").read_text(encoding="utf-8")
                             )
                             remote_tunnel.completed_result(result, len(request["accounts"]))
-                            return dict(result, transport="local-wifi")
-                    finally:
-                        bridge.__exit__(None, None, None)
+                            completed = dict(result, transport="local-wifi")
+                    except BaseException as exc:
+                        cleanup_bridge(bridge, original_error=exc)
+                        raise
+                    else:
+                        cleanup_bridge(bridge, completed)
+                        if completed is not None:
+                            return completed
         LOG.info(
             "Local renewal preflight was unavailable; using the authenticated remote tunnel before submitting device work."
         )
@@ -357,6 +376,7 @@ def run_automatic(job, stop, accounts=None):
                 )
             LOG.info("Local Wi-Fi unavailable after discovery; trying the existing remote tunnel.")
         else:
+            completed = None
             try:
                 remote_tunnel.atomic(
                     job / "route.json", {"transport": "local-wifi", "paired_device_verified": True}
@@ -365,9 +385,13 @@ def run_automatic(job, stop, accounts=None):
                     "Selected fast local Wi-Fi after paired TLS and device/service verification."
                 )
                 result = run_background(job, stop, "Network", accounts=accounts)
-                return dict(result, transport="local-wifi")
-            finally:
-                bridge.__exit__(None, None, None)
+                completed = dict(result, transport="local-wifi")
+            except BaseException as exc:
+                cleanup_bridge(bridge, original_error=exc)
+                raise
+            else:
+                cleanup_bridge(bridge, completed)
+                return completed
     stop.check()
     remote_tunnel.atomic(
         job / "route.json", {"transport": "remote", "local_device_verified": False}

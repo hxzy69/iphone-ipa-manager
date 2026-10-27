@@ -57,6 +57,8 @@ def start_existing(arguments, name=NAME):
         if saved.State not in (2, 4):  # Already queued/running: never launch a duplicate.
             saved.Run(None)
         return True
+    except (pywintypes.error, pywintypes.com_error) as exc:
+        raise OSError("Windows could not inspect or start the background task.") from exc
     finally:
         action = task = saved = folder = scheduler = None
         uninitialize(com_owned)
@@ -219,10 +221,12 @@ def configure(enabled, arguments, name=NAME):
         task.Settings.DisallowStartIfOnBatteries = False
         task.Settings.StopIfGoingOnBatteries = False
         task.Settings.ExecutionTimeLimit = "PT0S"
-        task.Settings.RestartCount = 999
+        task.Settings.RestartCount = 3
         task.Settings.RestartInterval = "PT1M"
         task.Settings.MultipleInstances = 2  # Ignore a second launch while listening.
         folder.RegisterTaskDefinition(name, task, 6, owner, None, 3)
+    except (pywintypes.error, pywintypes.com_error) as exc:
+        raise OSError("Windows could not update the background startup task.") from exc
     finally:
         # Release COM proxies while this apartment is still initialized.
         action = trigger = task = folder = scheduler = None

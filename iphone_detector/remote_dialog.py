@@ -9,10 +9,12 @@ from tkinter import ttk
 class RemoteDialog:
     def __init__(self, parent, *, preview=False):
         self.preview = preview
+        self.busy = False
         self.window = tk.Toplevel(parent)
         self.window.title("Remote connection setup")
         self.window.geometry("650x400")
         self.window.transient(parent)
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
         from iphone_detector.dialog_ui import shell, section
 
         panel, _ = shell(
@@ -21,6 +23,7 @@ class RemoteDialog:
             "Optional: manage your iPhone when you are away from home.",
             width=700,
             height=560,
+            close=self.close,
         )
         section(panel, "Before you start")
         ttk.Label(
@@ -52,6 +55,7 @@ class RemoteDialog:
             )
             return
         address = self.address.get().strip() or None
+        self.busy = True
         self.button.configure(state="disabled")
         self.status.set("Verifying pairing and VPN listener. Allow up to 90 seconds…")
 
@@ -79,7 +83,16 @@ class RemoteDialog:
             return
         try:
             self.status.set(self.events.get_nowait())
+            self.busy = False
             self.button.configure(state="normal")
         except queue.Empty:
             pass
         self.window.after(200, self.poll)
+
+    def close(self):
+        if self.busy:
+            self.status.set(
+                "Setup is still running. Please keep this window open until it finishes."
+            )
+            return
+        self.window.destroy()

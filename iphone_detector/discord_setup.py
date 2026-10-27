@@ -218,9 +218,6 @@ def launch(parent=None, *, preview=False):
             from iphone_detector.discord_setup import set_startup
 
             set_startup(startup.get())
-            preferences = json.loads(SETTINGS.read_text(encoding="utf-8"))
-            preferences["startup"] = startup.get()
-            SETTINGS.write_text(json.dumps(preferences, indent=2), encoding="utf-8")
             values["token"].set("")
             status.set("Saved. Token is encrypted with Windows DPAPI for your Windows account.")
             return True
@@ -330,7 +327,6 @@ def set_startup(enabled):
     startup.unlink(missing_ok=True)  # Migrate the old shortcut; one startup entry only.
     saved = json.loads(SETTINGS.read_text(encoding="utf-8")) if SETTINGS.exists() else {}
     saved["startup"] = bool(enabled)
-    SETTINGS.parent.mkdir(parents=True, exist_ok=True)
-    temporary = SETTINGS.with_suffix(".startup.tmp")
-    temporary.write_text(json.dumps(saved, indent=2), encoding="utf-8")
-    temporary.replace(SETTINGS)
+    from iphone_detector.storage import write_json
+
+    write_json(SETTINGS, saved)

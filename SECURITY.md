@@ -25,3 +25,10 @@ The release audit checks common secret patterns, private file types and user
 paths. It is a release guard, not proof that all possible secrets or vulnerabilities
 have been found. Dependency updates and independent security review remain necessary.
 
+Update checksums are published alongside the downloads on GitHub. They detect
+accidental corruption but do not authenticate a release if the publishing
+account or its release assets are compromised. The Windows executables are not
+code-signed. An authenticated update system needs a separately protected signing
+key and a trustworthy way to distribute its public key; do not treat the current
+checksum as an independent signature.
+

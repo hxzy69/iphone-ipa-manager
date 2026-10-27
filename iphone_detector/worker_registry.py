@@ -21,7 +21,7 @@ def register(job, mode, accounts=None):
             "started_at": time.time(),
             "mode": mode,
             "accounts": [value + 1 for value in accounts]
-            if accounts
+            if accounts is not None
             else list(range(1, len(get_workflow()) + 1)),
         },
     )

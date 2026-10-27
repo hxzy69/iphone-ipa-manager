@@ -181,6 +181,7 @@ def failure_label(entry):
             "job-storage-unavailable": "Job storage unavailable",
             "completion-unverified": "Completion could not be verified",
             "worker-interrupted": "Worker interrupted",
+            "cleanup-unverified": "Completed; bridge cleanup needs attention",
         }.get(entry.get("failure_code"), "")
         if isinstance(entry.get("failure_code"), str)
         else ""
@@ -198,6 +199,7 @@ def report_failure(entry):
         "job-storage-unavailable": "The request's job folder could not be prepared. Check available disk space and folder access before retrying.",
         "completion-unverified": "The queued worker stopped without a matching verified completion. Inspect /history and the phone before retrying.",
         "worker-interrupted": "The queued worker stopped without a final receipt. Inspect /history and the phone before retrying.",
+        "cleanup-unverified": "The requested accounts completed, but Wi-Fi bridge cleanup could not be verified. Check the Apple connection service before dismissing this warning. Do not reinstall merely to clear it.",
     }
     code = entry.get("failure_code")
     message = messages.get(
@@ -220,6 +222,32 @@ def step():
     from iphone_detector.job_history import read
     from iphone_detector import remote_tunnel
 
+    # Network discovery may take several seconds. Snapshot the candidate under
+    # the mutex, then probe without blocking enqueue, cancellation or review.
+    with guard():
+        snapshot = entries()
+        candidate = None
+        if not any(
+            item["state"] in ("failed", "interrupted")
+            or (item["state"] == "running" and alive(item))
+            for item in snapshot
+        ):
+            candidate = next((item for item in snapshot if item["state"] == "queued"), None)
+    candidate_id = candidate["id"] if candidate else None
+    ready = False
+    if candidate:
+        from iphone_detector.connection_router import route_ready
+
+        try:
+            ready = route_ready(refresh=candidate["mode"] == "refresh")
+        except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
+            LOG.exception("Queue connectivity check failed; request remains waiting.")
+        if not ready:
+            try:
+                remote_tunnel.ensure_started()
+            except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
+                LOG.exception("Could not start the remote tunnel; request remains waiting.")
+
     with guard():
         values = entries()
         for entry in values:
@@ -240,8 +268,19 @@ def step():
                 and not result.get("prepared_only")
                 and selection_matches(original, entry["selection"])
             )
-            entry["state"] = "completed" if verified else "failed" if result else "interrupted"
-            if not verified:
+            cleanup_warning = verified and bool(result.get("cleanup_warning"))
+            entry["state"] = (
+                "failed"
+                if cleanup_warning
+                else "completed"
+                if verified
+                else "failed"
+                if result
+                else "interrupted"
+            )
+            if cleanup_warning:
+                entry["failure_code"] = "cleanup-unverified"
+            elif not verified:
                 entry["failure_code"] = "completion-unverified" if result else "worker-interrupted"
             entry["finished_at"] = time.time()
             write_json(ROOT / (entry["id"] + ".json"), entry)
@@ -253,6 +292,12 @@ def step():
         entry = next((item for item in values if item["state"] == "queued"), None)
         if entry is None:
             return False
+        if (
+            entry["id"] != candidate_id
+            or entry["mode"] != candidate["mode"]
+            or entry["selection"] != candidate["selection"]
+        ):
+            return True
         lock = RunLock()
         try:
             if not lock.acquire():
@@ -267,21 +312,10 @@ def step():
                 request.get(key) != entry["selection"].get(key) for key in ("serial", "accounts")
             ):
                 raise ValueError("The account, phone or IPA changed after queuing.")
-            from iphone_detector.connection_router import route_ready
-
-            try:
-                ready = route_ready(refresh=entry["mode"] == "refresh")
-            except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
-                LOG.exception("Queue connectivity check failed; request remains waiting.")
-                ready = False
             if not ready:
                 if entry.get("waiting_reason") != "connection":
                     entry["waiting_reason"] = "connection"
                     write_json(ROOT / (entry["id"] + ".json"), entry)
-                try:
-                    remote_tunnel.ensure_started()
-                except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
-                    LOG.exception("Could not start the remote tunnel; request remains waiting.")
                 return True
             job = DATA_ROOT / "automation-runs" / ("queue-" + entry["id"])
             failure_code = "job-storage-unavailable"
@@ -323,23 +357,40 @@ def ensure_started():
     if not pending():
         return
     from iphone_detector.job_history import read
-
-    if alive(read(DATA_ROOT / "queue-runner.json")):
-        return
     from iphone_detector.discord_bot import command
+    from iphone_detector.paths import profile_lock_name
 
-    subprocess.Popen(
-        command(["--queue-runner"]),
-        creationflags=subprocess.CREATE_NO_WINDOW,
-        env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1"),
-    )
+    launch_lock = RunLock()
+    launch_lock.name = profile_lock_name("QueueLaunch")
+    if not launch_lock.acquire():
+        return
+    try:
+        if alive(read(DATA_ROOT / "queue-runner.json")) or alive(
+            read(DATA_ROOT / "queue-launch.json")
+        ):
+            return
+        process = subprocess.Popen(
+            command(["--queue-runner"]),
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1"),
+        )
+        try:
+            created = psutil.Process(process.pid).create_time()
+        except psutil.Error:
+            # A process that has already exited cannot reserve the launch slot.
+            return
+        write_json(
+            DATA_ROOT / "queue-launch.json", {"pid": process.pid, "process_created": created}
+        )
+    finally:
+        launch_lock.close()
 
 
 def run():
     lock = RunLock()
     lock.name = "Local\\iPhoneIPACommunityQueueRunner"
     if not lock.acquire():
-        return
+        return "already-running"
     try:
         from iphone_detector.activation_health import ready
 
@@ -354,7 +405,14 @@ def run():
                     break
             except QueueBusy:
                 pass
-            time.sleep(2)
+            # Waiting for a phone is not a reason to rediscover the network
+            # every two seconds. Queue controls remain independently available.
+            try:
+                waiting = pending()
+                delay = 10 if waiting and all(item["state"] == "queued" for item in waiting) else 2
+            except OSError, ValueError:
+                delay = 2
+            time.sleep(delay)
     finally:
         (DATA_ROOT / "queue-runner.json").unlink(missing_ok=True)
         lock.close()

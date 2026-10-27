@@ -307,11 +307,45 @@ def launch_uninstaller(root):
         folder = Path(tempfile.mkdtemp(prefix="ipa-manager-uninstall-"))
         helper = folder / "iPhoneIPAManager.exe"
         shutil.copy2(sys.executable, helper)
-        subprocess.Popen(
-            [str(helper), "--desktop-uninstall", str(root), "--data-dir", str(DATA_ROOT)],
-            creationflags=subprocess.CREATE_NO_WINDOW,
-            env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1"),
+        try:
+            process = subprocess.Popen(
+                [str(helper), "--desktop-uninstall", str(root), "--data-dir", str(DATA_ROOT)],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1"),
+            )
+        except OSError:
+            helper.unlink(missing_ok=True)
+            folder.rmdir()
+            raise
+        # The helper cannot delete its own executable while Windows has it open.
+        # Remove only this specific copied file and its empty temporary folder.
+        powershell = (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32/WindowsPowerShell/v1.0/powershell.exe"
         )
+        script = (
+            "Wait-Process -Id ([int]$env:IPA_UNINSTALL_HELPER_PID) -ErrorAction SilentlyContinue; "
+            "Remove-Item -LiteralPath $env:IPA_UNINSTALL_HELPER_FILE -Force -ErrorAction SilentlyContinue; "
+            "if (-not (Get-ChildItem -LiteralPath $env:IPA_UNINSTALL_HELPER_DIR -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) { "
+            "Remove-Item -LiteralPath $env:IPA_UNINSTALL_HELPER_DIR -Force -ErrorAction SilentlyContinue }"
+        )
+        try:
+            subprocess.Popen(
+                [str(powershell), "-NoProfile", "-NonInteractive", "-Command", script],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=dict(
+                    os.environ,
+                    IPA_UNINSTALL_HELPER_PID=str(process.pid),
+                    IPA_UNINSTALL_HELPER_FILE=str(helper),
+                    IPA_UNINSTALL_HELPER_DIR=str(folder),
+                ),
+            )
+        except OSError:
+            import logging
+
+            logging.getLogger("iphone-detector.setup").warning(
+                "Could not schedule temporary uninstaller cleanup."
+            )
         return
     setup_window(root=root)
 

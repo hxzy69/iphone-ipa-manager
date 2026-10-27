@@ -84,7 +84,7 @@ def register(tree, guild, allow, can_suggest, discord):
             return
         from iphone_detector import guided_update
         from iphone_detector.job_history import read
-        from iphone_detector.updates import check_updates
+        from iphone_detector.updates import UpdateError, check_updates
 
         if action == "download":
             await interaction.response.defer(ephemeral=True)
@@ -102,9 +102,25 @@ def register(tree, guild, allow, can_suggest, discord):
                     "Release verified. Use /update → Activate prepared update when ready. Activation restarts the bot and tunnel; home Wi-Fi may be needed afterward.",
                     ephemeral=True,
                 )
-            except Exception:
+            except Exception as exc:
+                import logging
+
+                logging.getLogger("iphone-detector.discord").exception("Update preparation failed.")
+                reason = (
+                    str(exc)
+                    if isinstance(exc, UpdateError)
+                    else "At least 1 GiB of free disk space is required."
+                    if isinstance(exc, ValueError)
+                    and str(exc)
+                    == "Keep at least 1 GiB free to download and prepare an update safely."
+                    else "The downloaded release failed validation."
+                    if isinstance(exc, ValueError)
+                    else "The release could not be downloaded or accessed."
+                    if isinstance(exc, OSError)
+                    else "The update service reported an error. See the local Discord log."
+                )
                 await interaction.followup.send(
-                    "Download or verification failed. The running version was preserved.",
+                    reason + " The running version was preserved.",
                     ephemeral=True,
                 )
             return
@@ -138,7 +154,12 @@ def register(tree, guild, allow, can_suggest, discord):
                 )
                 try:
                     await asyncio.to_thread(guided_update.start, plan)
-                except OSError, ValueError:
+                except Exception:
+                    import logging
+
+                    logging.getLogger("iphone-detector.discord").exception(
+                        "Update activation could not start."
+                    )
                     await item.followup.send(
                         "Activation could not start. Check active work and the local updater status.",
                         ephemeral=True,
@@ -395,8 +416,18 @@ def register(tree, guild, allow, can_suggest, discord):
                 view=Confirm(timeout=120),
                 ephemeral=True,
             )
-        except OSError, ValueError, RuntimeError, discord.HTTPException:
+        except (OSError, ValueError, RuntimeError, discord.HTTPException) as exc:
+            import logging
+
+            logging.getLogger("iphone-detector.discord").exception("Backup operation failed.")
+            reason = (
+                "The backup file is invalid or contains unsupported settings."
+                if isinstance(exc, ValueError)
+                else "Discord could not transfer the backup; check Attach Files permission."
+                if isinstance(exc, discord.HTTPException)
+                else "The local backup could not be accessed or is blocked by active work."
+            )
             await interaction.followup.send(
-                "Could not export or validate the backup. Use the local GUI, check the JSON format and ensure the bot has Attach Files permission for exports.",
+                reason + " See the local Discord log for details.",
                 ephemeral=True,
             )

@@ -58,4 +58,7 @@ def notify(title, message):
     )
     if result.returncode:
         raise RuntimeError("Windows notification failed: " + result.stderr.strip()[-300:])
+    if not result.stdout.strip():
+        # A successful process without a receipt cannot confirm delivery.
+        return {"submitted": None, "setting": "unknown"}
     return json.loads(result.stdout.strip())

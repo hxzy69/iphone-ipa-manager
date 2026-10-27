@@ -27,6 +27,14 @@ BRIDGE_HASH = "8a926491603237a911150c2e05850cb3a6cb52f6b869c7049a0f91e5cf61bb80"
 MAX_PACKET = 16 * 1024 * 1024
 
 
+class BridgeCleanupError(RuntimeError):
+    """Bridge cleanup failed; a completed device result may still be available."""
+
+    def __init__(self, message, completed_result=None):
+        super().__init__(message)
+        self.completed_result = completed_result
+
+
 def cache_executable(binary, root):
     """Keep the companion available after a one-file worker's extraction exits."""
     contents = Path(binary).read_bytes()
@@ -391,6 +399,18 @@ class WifiBridge:
             raise
 
     def __exit__(self, *args):
+        try:
+            self._cleanup()
+        except Exception as exc:
+            if len(args) > 1 and args[1] is not None:
+                args[1].add_note("Wi-Fi bridge cleanup also failed: " + str(exc))
+                LOG.exception("Wi-Fi bridge cleanup failed while another error was active.")
+                return False
+            raise BridgeCleanupError(
+                "Wi-Fi bridge cleanup could not be verified: " + str(exc)
+            ) from exc
+
+    def _cleanup(self):
         if self.lease:
             try:
                 self.lease.close()

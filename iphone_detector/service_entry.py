@@ -28,6 +28,8 @@ def run(component, callback):
     try:
         setup_logging(log_file=LOG_FILES[component])
         code = callback()
+        if component == "queue" and code == "already-running":
+            return 0
         if code not in (None, 0):
             raise RuntimeError("Background component stopped unsuccessfully")
     except Exception:

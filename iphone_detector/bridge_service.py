@@ -17,14 +17,17 @@ def installed():
     import win32service
     import pywintypes
 
-    manager = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_CONNECT)
+    try:
+        manager = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_CONNECT)
+    except pywintypes.error as exc:
+        raise OSError("Windows could not inspect the Wi-Fi bridge service.") from exc
     try:
         try:
             handle = win32service.OpenService(manager, NAME, win32service.SERVICE_QUERY_STATUS)
         except pywintypes.error as exc:
             if exc.winerror == 1060:
                 return False
-            raise
+            raise OSError("Windows could not inspect the Wi-Fi bridge service.") from exc
         win32service.CloseServiceHandle(handle)
         return True
     finally:
@@ -35,15 +38,23 @@ class ServiceLease:
     def __init__(self):
         import win32file
         import win32pipe
+        import pywintypes
 
         # Never silently elevate from a remote command.
-        win32pipe.WaitNamedPipe(PIPE, 5000)
-        self.handle = win32file.CreateFile(PIPE, 0xC0000000, 0, None, 3, 0, None)
+        try:
+            win32pipe.WaitNamedPipe(PIPE, 5000)
+            self.handle = win32file.CreateFile(PIPE, 0xC0000000, 0, None, 3, 0, None)
+        except pywintypes.error as exc:
+            raise OSError("Wi-Fi bridge service is unavailable. Check the local service.") from exc
         self.buffer = b""
         try:
             win32file.WriteFile(self.handle, b"START\n")
             if self.read(40) != "RUNNING":
                 raise RuntimeError("Wi-Fi service could not start the bridge.")
+        except pywintypes.error as exc:
+            self.handle.Close()
+            self.handle = None
+            raise OSError("Could not start the Wi-Fi bridge service.") from exc
         except BaseException:
             self.handle.Close()
             self.handle = None
@@ -52,21 +63,26 @@ class ServiceLease:
     def read(self, timeout):
         import win32file
         import win32pipe
+        import pywintypes
 
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if b"\n" in self.buffer:
                 line, self.buffer = self.buffer.split(b"\n", 1)
                 return line.decode("ascii").strip()
-            _, count, _ = win32pipe.PeekNamedPipe(self.handle, 0)
-            if count:
-                self.buffer += win32file.ReadFile(self.handle, min(count, 4096))[1]
-            else:
-                time.sleep(0.1)
+            try:
+                _, count, _ = win32pipe.PeekNamedPipe(self.handle, 0)
+                if count:
+                    self.buffer += win32file.ReadFile(self.handle, min(count, 4096))[1]
+                else:
+                    time.sleep(0.1)
+            except pywintypes.error as exc:
+                raise OSError("Wi-Fi bridge service connection was interrupted.") from exc
         raise RuntimeError("Wi-Fi service response timed out.")
 
     def close(self):
         import win32file
+        import pywintypes
 
         if self.handle is None:
             return
@@ -74,6 +90,8 @@ class ServiceLease:
             win32file.WriteFile(self.handle, b"STOP\n")
             if self.read(40) != "STOPPED":
                 raise RuntimeError("Wi-Fi service could not verify Apple service restoration.")
+        except pywintypes.error as exc:
+            raise OSError("Wi-Fi bridge service cleanup could not be verified.") from exc
         finally:
             self.handle.Close()
             self.handle = None

@@ -126,6 +126,8 @@ live configuration, signing material, device pair records, or IPA files.
 See [BUILDING.md](docs/BUILDING.md) for a clean Windows build, pinned dependencies,
 tests, license collection and release archives. The Python package retains the
 internal `iphone_detector` name to avoid breaking its worker protocol.
+Source development requires Python 3.14; earlier Python versions are not
+supported. The packaged Windows application includes its own runtime.
 
 ```powershell
 py -3.14 -m venv .venv

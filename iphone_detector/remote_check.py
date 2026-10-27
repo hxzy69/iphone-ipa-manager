@@ -111,7 +111,7 @@ def authenticate_direct(ip, serial, pair, stage=lambda _: None):
         if not session.get("EnableSessionSSL"):
             raise RuntimeError("Remote pairing session did not enable authenticated TLS.")
         context = tls_context(pair)
-        stream = pinned(context, raw, pair) if session.get("EnableSessionSSL") else raw
+        stream = pinned(context, raw, pair)
         try:
             stage("verify_device")
             udid = lockdown(stream, {"Request": "GetValue", "Key": "UniqueDeviceID"})["Value"]

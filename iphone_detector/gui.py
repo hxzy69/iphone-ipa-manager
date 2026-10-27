@@ -68,7 +68,10 @@ class App:
             from iphone_detector.job_queue import ensure_started
 
             ensure_started()
-        except OSError, ValueError:
+        except Exception:
+            import logging
+
+            logging.getLogger("iphone-detector.gui").exception("Queue startup failed.")
             self.status.set("Queue needs attention; open Refresh & history.")
 
     def _styles(self):
@@ -783,6 +786,10 @@ class App:
     def open_remote_setup(self):
         from iphone_detector.remote_dialog import RemoteDialog
 
+        current = getattr(self, "remote_dialog", None)
+        if current is not None and current.window.winfo_exists():
+            current.window.lift()
+            return
         self.remote_dialog = RemoteDialog(self.root, preview=getattr(self, "preview", False))
 
     def browse_folder(self):
@@ -1154,7 +1161,7 @@ class App:
 
     def _read_log(self):
         log = self.job / "activity.log"
-        if log.exists():
+        try:
             if log.stat().st_size < self.log_offset:
                 self.log_offset = 0
                 self.decoder.reset()
@@ -1164,8 +1171,25 @@ class App:
                 self.log_offset = handle.tell()
             if data:
                 self.append(self.decoder.decode(data))
+        except OSError:
+            # The worker may rotate or remove the log while the UI reads it.
+            return
 
     def poll(self):
+        try:
+            self._poll_once()
+        except Exception:
+            import logging
+
+            logging.getLogger("iphone-detector.gui").exception("Status update failed; retrying.")
+        finally:
+            try:
+                if self.root.winfo_exists():
+                    self.root.after(150, self.poll)
+            except tk.TclError:
+                pass
+
+    def _poll_once(self):
         from iphone_detector.guided_update import STATE
         from iphone_detector.job_history import read
 
@@ -1175,6 +1199,7 @@ class App:
             and type(update.get("at")) in (int, float)
             and time.time() - update.get("at", 0) < 120
             and self.process is None
+            and not getattr(getattr(self, "remote_dialog", None), "busy", False)
         ):
             self.root.destroy()
             return
@@ -1193,11 +1218,12 @@ class App:
                 self.process = None
                 self._busy(False)
                 result_path = job / "result.json"
-                result = (
-                    json.loads(result_path.read_text(encoding="utf-8"))
-                    if result_path.exists()
-                    else {}
-                )
+                try:
+                    result = json.loads(result_path.read_text(encoding="utf-8"))
+                    if not isinstance(result, dict):
+                        result = {}
+                except OSError, ValueError:
+                    result = {}
                 if self.closing:
                     self.root.destroy()
                     return
@@ -1230,7 +1256,6 @@ class App:
                         )
                     )
                 self.stop_started = None
-        self.root.after(150, self.poll)
 
     def open_dashboard(self):
         from iphone_detector.management_dialog import ManagementDialog
@@ -1501,6 +1526,13 @@ class App:
                 ).pack(fill="x", padx=15, pady=8)
 
     def close(self):
+        remote = getattr(self, "remote_dialog", None)
+        if remote is not None and remote.busy:
+            remote.window.lift()
+            remote.status.set(
+                "Setup is still running. Please wait for its result before closing the manager."
+            )
+            return
         if self.process is not None:
             self.closing = True
             self.stop()

@@ -36,8 +36,9 @@ class ComRuntimeTests(unittest.TestCase):
             -2147352567, "dispatch", (0, None, None, None, 0, -2147024891), None
         )
         with patch("win32com.client.Dispatch", return_value=scheduler):
-            with self.assertRaises(pywintypes.com_error):
+            with self.assertRaises(OSError) as error:
                 startup_task.configure(False, [], name="fixture-task")
+            self.assertIsInstance(error.exception.__cause__, pywintypes.com_error)
 
     def test_native_success_and_nested_initialization_are_balanced(self):
         for status in (0, 1):
@@ -100,3 +101,13 @@ class ComRuntimeTests(unittest.TestCase):
                 self.assertTrue(notify.notify("Test", "Test")["ok"])
             saved = shell.CreateShortcut(str(path))
             self.assertEqual((saved.TargetPath, saved.Arguments), original)
+
+    def test_notification_without_receipt_reports_unknown_delivery(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict("os.environ", {"APPDATA": directory}),
+            patch.object(notify.subprocess, "run", return_value=Mock(returncode=0, stdout="")),
+        ):
+            result = notify.notify("Test", "Test")
+            self.assertIsNone(result["submitted"])
+            self.assertEqual(result["setting"], "unknown")

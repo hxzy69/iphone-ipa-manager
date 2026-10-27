@@ -108,11 +108,16 @@ def worker(mode, job, parent_pid=None, accounts=None):
 
     threading.Thread(target=monitor, daemon=True, name="stop-request").start()
 
+    completed_data = None
+
     def result(data):
+        nonlocal completed_data
         from iphone_detector.storage import write_json
         from iphone_detector.operations import collect_native
 
         write_json(job / "result.json", data)
+        if data.get("ok") is True:
+            completed_data = data
         try:
             collect_native(job)
         except OSError, ValueError, TypeError, KeyError:
@@ -239,6 +244,23 @@ def worker(mode, job, parent_pid=None, accounts=None):
         return 0
     except Exception as exc:
         from iphone_detector.cancellation import Cancelled
+        from iphone_detector.wifi import BridgeCleanupError
+
+        if isinstance(exc, BridgeCleanupError):
+            completed = exc.completed_result or completed_data
+            if completed and completed.get("ok") is True:
+                failure = (
+                    "Installation completed, but Wi-Fi bridge cleanup needs attention. " + str(exc)
+                )
+                log.exception("%s", failure)
+                if completed_data is None:
+                    result(completed)
+                from iphone_detector.storage import write_json
+
+                write_json(
+                    job / "result.json", dict(completed, cleanup_warning=failure, error=failure)
+                )
+                return 1
 
         if isinstance(exc, Cancelled):
             log.info("Installation cancelled safely.")

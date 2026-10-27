@@ -706,6 +706,6 @@ def run():
     from iphone_detector.live_status import StatusServer
     from iphone_detector.auto_refresh import describe as renewal_summary
 
-    setup_logging(log_file=str(DATA_ROOT / "remote-tunnel.log"))
+    setup_logging(log_file="remote-tunnel.log")
     with StatusServer(DATA_ROOT, renewal_summary) as status_channel:
         asyncio.run(daemon(status_channel))

@@ -45,6 +45,32 @@ class ReliabilityTests(unittest.TestCase):
             (root / "discord-outbox/broken.json").write_text("[]")
             self.assertEqual(len(outbox.pending(root, settings)), 1)
 
+    def test_same_event_for_new_audience_is_not_blocked_by_old_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old = {"user_id": 1, "guild_id": 2, "channel_id": 3}
+            new = dict(old, channel_id=4)
+            (root / "discord.json").write_text(json.dumps(old))
+            self.assertTrue(outbox.enqueue(root, "incident", "Old audience"))
+            (root / "discord.json").write_text(json.dumps(new))
+            self.assertTrue(outbox.enqueue(root, "incident", "New audience"))
+            self.assertTrue(outbox.enqueue(root, "incident", "Duplicate"))
+            self.assertEqual([v["message"] for _, v in outbox.pending(root, old)], ["Old audience"])
+            self.assertEqual([v["message"] for _, v in outbox.pending(root, new)], ["New audience"])
+
+    def test_corrupt_existing_outbox_record_is_not_reported_as_queued(self):
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "discord.json").write_text(
+                json.dumps({"user_id": 1, "guild_id": 2, "channel_id": 3})
+            )
+            folder = root / "discord-outbox"
+            folder.mkdir()
+            (folder / (hashlib.sha256(b"incident").hexdigest() + ".json")).write_bytes(b"broken")
+            self.assertFalse(outbox.enqueue(root, "incident", "Message"))
+
     def test_corrupt_renewal_state_blocks_launch_and_preserves_original_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

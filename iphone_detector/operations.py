@@ -153,7 +153,13 @@ def collect_native(job):
     if request.get("prepare_only") or request.get("check_only"):
         return
     try:
-        lines = (job / "backend-events.jsonl").read_text(encoding="utf-8").splitlines()
+        # A damaged line must not hide earlier valid completion events or crash
+        # recovery. Replacement characters make malformed JSON lines fail closed.
+        lines = (
+            (job / "backend-events.jsonl")
+            .read_text(encoding="utf-8", errors="replace")
+            .splitlines()
+        )
     except OSError:
         return
     for line in lines:

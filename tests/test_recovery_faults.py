@@ -16,6 +16,18 @@ class QueueRecoveryTests(unittest.TestCase):
     setUp = workflow_fixtures.WorkflowUpgradeTests.setUp
     job = workflow_fixtures.WorkflowUpgradeTests.job
 
+    def test_native_event_log_with_invalid_utf8_preserves_valid_completions(self):
+        job = self.root / "automation-runs" / "damaged-events"
+        job.mkdir(parents=True)
+        write_json(job / "backend-job.json", {"accounts": [{"account": 1}], "serial": "phone"})
+        (job / "backend-events.jsonl").write_bytes(
+            b'{"stage":"completed_account","account":1}\n\xffbad\n'
+        )
+        with patch.object(operations, "record") as record:
+            operations.collect_native(job)
+        record.assert_called_once()
+        self.assertEqual(record.call_args.args[2], 1)
+
     def test_boolean_slot_in_completion_snapshot_pauses_queue_without_replay(self):
         entry = job_queue.enqueue(accounts=[0])
         job = self.root / "automation-runs" / ("queue-" + entry["id"])

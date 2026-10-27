@@ -117,6 +117,29 @@ class AutoRefreshTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "repair"):
             auto.schedule_snapshot()
 
+    def test_repair_incident_is_deduplicated_but_a_later_failure_is_reported(self):
+        stack = self.isolated_schedule()
+        lock = stack.enter_context(patch("iphone_detector.run_lock.RunLock"))
+        lock.return_value.acquire.return_value = True
+        enqueue = stack.enter_context(patch("iphone_detector.discord_outbox.enqueue"))
+        spawn = stack.enter_context(patch.object(auto.subprocess, "Popen"))
+        self.config_file = auto.CONFIG
+        self.config_file.write_text("invalid json")
+
+        auto.tick()
+        first_key = enqueue.call_args.args[1]
+        auto.tick()
+        self.assertEqual(enqueue.call_args.args[1], first_key)
+
+        # Repair while renewal is disabled, then introduce a separate failure.
+        self.config_file.write_text(json.dumps({"enabled": False}))
+        auto.tick()
+        self.assertEqual(auto.read(self.folder / "auto-refresh-check.json")["status"], "disabled")
+        self.config_file.write_text("invalid json")
+        auto.tick()
+        self.assertNotEqual(enqueue.call_args.args[1], first_key)
+        spawn.assert_not_called()
+
     def test_scheduled_busy_and_unresolved_runs_do_not_probe_network(self):
         stack = self.isolated_schedule()
         stack.enter_context(patch("iphone_detector.run_lock.RunLock"))

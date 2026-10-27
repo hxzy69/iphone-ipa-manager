@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.2 — recovery and notification fixes — 2026-10-27
+
+- Report separate renewal-state corruption incidents independently while suppressing
+  repeated alerts for the same unresolved incident. A successful disabled check
+  clears the previous incident so later failures can be reported.
+- Preserve private report ownership when Discord settings change: a new audience
+  can receive its own report for the same event without receiving the old one.
+  Corrupt existing report records no longer count as successfully queued.
+- Recover valid native completion events even when another event log line contains
+  invalid UTF-8, rather than aborting collection of the entire log.
+- Add regression coverage for these failure and recovery paths.
+
 ## 0.3.1 — live status recovery — 2026-10-25
 
 - The desktop reads a fresh tunnel/renewal summary directly from the running

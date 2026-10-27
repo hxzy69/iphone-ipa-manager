@@ -16,26 +16,44 @@ def enqueue(root, key, message):
         audience = validate_settings(saved)
     except OSError, ValueError, TypeError, KeyError, AttributeError:
         return False
-    path = root / "discord-outbox" / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+    digest = hashlib.sha256(key.encode()).hexdigest()
+    path = root / "discord-outbox" / (digest + ".json")
+    # Retain the original filename for existing reports. If its event key was
+    # already used for another audience, give this audience its own receipt.
+    # Never move or redeliver the old audience's private report.
+    audience_key = json.dumps(audience, sort_keys=True, separators=(",", ":"))
+    alternate = (
+        root
+        / "discord-outbox"
+        / (hashlib.sha256((key + "\0" + audience_key).encode()).hexdigest() + ".json")
+    )
     try:
-        write_json(
-            path,
-            {
-                "audience": audience,
-                "message": message[:1800],
-                "created": time.time(),
-                "key": key,
-            },
-            exclusive=True,
-        )
-    except OSError:
+        for candidate in (path, alternate):
+            written = write_json(
+                candidate,
+                {
+                    "audience": audience,
+                    "message": message[:1800],
+                    "created": time.time(),
+                    "key": key,
+                },
+                exclusive=True,
+            )
+            if written is not False:
+                return True
+            existing = json.loads(candidate.read_text(encoding="utf-8"))
+            if not isinstance(existing, dict) or existing.get("key") != key:
+                return False
+            if existing.get("audience") == audience:
+                return True
+    except OSError, ValueError:
         import logging
 
         logging.getLogger(__name__).exception(
             "Could not persist operational report; local job receipt remains available."
         )
         return False
-    return True
+    return False
 
 
 def pending(root, settings):

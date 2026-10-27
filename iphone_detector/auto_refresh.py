@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
+import uuid
 
 from iphone_detector.paths import DATA_ROOT
 from iphone_detector.com_runtime import initialize, uninitialize
@@ -283,19 +284,31 @@ def tick():
             config, success, state = schedule_snapshot()
         except ValueError:
             LOG.exception("Automatic refresh paused because saved renewal state is invalid.")
+            check_path = DATA_ROOT / "auto-refresh-check.json"
+            previous = read(check_path)
+            incident = (
+                previous.get("incident") if previous.get("status") == "state-needs-repair" else None
+            )
+            if not isinstance(incident, str) or not incident:
+                incident = uuid.uuid4().hex
             remote_tunnel.atomic(
-                DATA_ROOT / "auto-refresh-check.json",
-                {"checked_at": time.time(), "status": "state-needs-repair"},
+                check_path,
+                {"checked_at": time.time(), "status": "state-needs-repair", "incident": incident},
             )
             from iphone_detector.discord_outbox import enqueue
 
             enqueue(
                 DATA_ROOT,
-                "renewal-state-needs-repair",
+                "renewal-state-needs-repair:" + incident,
                 "Automatic renewal paused: saved renewal state needs local repair. No installation was started. Use /check and inspect the local automatic refresh log.",
             )
             return
         if not config.get("enabled"):
+            # Clear any previous repair incident, even while renewal is disabled,
+            # so a later independent failure can produce a new notification.
+            check_path = DATA_ROOT / "auto-refresh-check.json"
+            if read(check_path).get("status") == "state-needs-repair":
+                remote_tunnel.atomic(check_path, {"checked_at": time.time(), "status": "disabled"})
             return
         guard = RunLock()
         available = guard.acquire()

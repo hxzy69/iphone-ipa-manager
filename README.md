@@ -9,6 +9,8 @@ same saved assignments and job status.
 
 ## Download
 
+The source is at **0.3.4**; its Windows release is being prepared. The latest available download is 0.3.3.
+
 [**Download Windows installer — 0.3.3**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.3-preview/iPhoneIPAManager-0.3.3-setup-x64.exe)
 
 [Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.3-preview/iPhoneIPAManager-0.3.3-windows-x64.zip)

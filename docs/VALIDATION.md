@@ -1,5 +1,19 @@
 # Public preview validation
 
+## 0.3.3 — 2026-10-27
+
+The release workflow built and verified the Windows installer and portable
+package. The source passed 464 Python tests, native Rust tests, optimized
+block-buffer tests, and targeted Miri checks. The dependency audit reports two
+time-limited accepted advisories; see `third_party/security-exceptions.json`
+for their scope and expiry.
+
+Before release, device tests covered USB and Wi-Fi installation, USB and
+cellular profile refresh, and the Wi-Fi bridge fallback. The user confirmed
+the refreshed apps opened. These tests exercised candidate builds and source;
+the published executable has not had a separate physical-device or fresh
+Windows reboot acceptance test.
+
 ## 0.3.1 — 2026-10-25
 
 443 isolated tests passed, including owner-restricted live status IPC, malformed

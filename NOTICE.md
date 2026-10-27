@@ -12,6 +12,7 @@ device pairing records, IPA files, or user accounts are included.
 | Python device services and userspace TCP | [pymobiledevice3](https://github.com/doronz88/pymobiledevice3), pmd-pytcp, pmd-net-addr, pmd-net-proto | GPL-3.0-or-later; complete Python package sources in `vendor/python/` |
 | Apple code signing | [apple-codesign-quick](https://github.com/Dadoum/apple-crates) | LGPL-2.1-or-later; source and license in `vendor/apple-codesign-quick/` |
 | Native iOS device services | [idevice](https://github.com/jkcoxson/idevice) | MIT; generated dependency notices |
+| Patched block buffer | [RustCrypto block-buffer 0.10.4](https://crates.io/crates/block-buffer/0.10.4) | MIT or Apache-2.0; `vendor/block-buffer/` |
 
 The native helper is derived from iloader and uses its established credential
 storage service name for compatibility. The iloader frontend, icons, and update

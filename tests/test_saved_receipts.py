@@ -9,11 +9,23 @@ import time
 import unittest
 from unittest.mock import patch
 
-from iphone_detector import auto_refresh, background, operations
+from iphone_detector import auto_refresh, background, dashboard, operations
 from iphone_detector.storage import write_json
 
 
 class SavedReceiptTests(unittest.TestCase):
+    def test_unrepresentable_dashboard_date_is_unknown(self):
+        self.assertEqual(dashboard.date(10**100), "Unknown")
+
+    def test_unrepresentable_receipt_time_is_not_verified(self):
+        receipt = {
+            "serial": self.request["serial"],
+            "selection": self.request["accounts"][0],
+            "verified": True,
+            "at": 10**500,
+        }
+        self.assertFalse(operations.matching(receipt, self.request, self.request["accounts"][0]))
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -38,6 +50,22 @@ class SavedReceiptTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertFalse(operations.selection_matches(altered, self.request))
                 self.assertFalse(operations.selection_matches(self.request, altered))
+
+    def test_newer_durable_receipt_wins_when_index_update_was_interrupted(self):
+        older = self.root / "automation-runs" / "older"
+        newer = self.root / "automation-runs" / "newer"
+        older.mkdir(parents=True)
+        newer.mkdir(parents=True)
+        first = operations.record(older, self.request, 1)
+        first["at"] -= 60
+        write_json(older / "completed-1.json", first)
+        index = operations.index_path(
+            self.root, self.request["serial"], self.request["accounts"][0]
+        )
+        write_json(index, first)
+        second = dict(first, at=time.time(), operation="refresh")
+        write_json(newer / "completed-1.json", second)
+        self.assertEqual(operations.account_status(self.root, self.config)[1], second)
 
     def test_identically_corrupt_selections_never_verify_each_other(self):
         for key, values in {

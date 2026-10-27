@@ -168,7 +168,12 @@ def local_networks():
             continue
         for address in adapter.ips:
             if isinstance(address.ip, str) and ":" not in address.ip:
-                network = ipaddress.ip_network((address.ip, address.network_prefix), strict=False)
+                try:
+                    network = ipaddress.ip_network(
+                        (address.ip, address.network_prefix), strict=False
+                    )
+                except ValueError, TypeError:
+                    continue
                 if network.prefixlen < 31 and any(network.subnet_of(scope) for scope in PRIVATE):
                     result.append(network)
     return result
@@ -221,8 +226,18 @@ def tailscale_candidate(config):
         )
     )
     selected = select_peer(status, config["ip"])
-    peer = next(p for p in status["Peer"].values() if selected in p.get("TailscaleIPs", []))
+    peer = next(
+        p
+        for p in status["Peer"].values()
+        if isinstance(p, dict)
+        and isinstance(p.get("OS"), str)
+        and p["OS"].lower() == "ios"
+        and isinstance(p.get("TailscaleIPs"), list)
+        and selected in p["TailscaleIPs"]
+    )
     endpoint = peer.get("CurAddr") or ""
+    if not isinstance(endpoint, str):
+        return None
     if endpoint.startswith("[") and "]:" in endpoint:
         return endpoint[1:].rsplit("]:", 1)[0]
     return endpoint.rsplit(":", 1)[0] if endpoint.count(":") == 1 else None

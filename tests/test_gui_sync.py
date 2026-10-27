@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 import tkinter as tk
 
-from iphone_detector.gui_sync import fields, merge
+from iphone_detector.gui_sync import fields, merge, same_account
 from iphone_detector.gui import App
 
 
@@ -92,6 +92,7 @@ class GuiSyncTests(unittest.TestCase):
         app = App.__new__(App)
         interp = tk.Tcl()
         config = configured({"automation": {"ipa_directory": "old-folder"}})
+        app.config = copy.deepcopy(config)
         saved = fields(config)
         for key, value in saved.items():
             if not key.startswith("ipa"):
@@ -110,6 +111,26 @@ class GuiSyncTests(unittest.TestCase):
         app.root = Mock()
         app.status = tk.StringVar(interp)
         return app, config
+
+    def test_replaced_account_cannot_inherit_unsaved_ipa_edit(self):
+        app, config = self.app()
+        app.names[0].set("local-change.ipa")
+        remote = copy.deepcopy(config)
+        remote["automation"]["accounts"][0]["email"] = "replacement@example.com"
+        with self.assertRaisesRegex(ValueError, "Account 1 changed"):
+            app.sync_saved(latest=remote)
+        self.assertEqual(app.names[0].get(), "local-change.ipa")
+        app.sync_saved(force=True, latest=remote)
+        self.assertEqual(app.names[0].get(), fields(remote)["ipa0"])
+        self.assertEqual(app.accounts[0]["email"], "replacement@example.com")
+
+    def test_import_dialog_rejects_replaced_or_reordered_account(self):
+        opened = ["one@example.com", "two@example.com"]
+        current = [{"email": email} for email in opened]
+        self.assertTrue(same_account(opened, current, 0))
+        self.assertFalse(same_account(opened, current[::-1], 0))
+        self.assertFalse(same_account(opened, current[:1], 1))
+        self.assertFalse(same_account(opened, current, -1))
 
     def test_gui_live_sync_updates_all_clean_variables_and_preserves_dirty_ones(self):
         app, config = self.app()

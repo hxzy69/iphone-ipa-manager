@@ -3,12 +3,12 @@
 from datetime import datetime
 import json
 import logging
-import math
 import os
 from pathlib import Path
 import subprocess
 import time
 import uuid
+from iphone_detector.storage import finite_number
 
 from iphone_detector.paths import DATA_ROOT
 from iphone_detector.com_runtime import initialize, uninitialize
@@ -58,8 +58,7 @@ def schedule_snapshot():
             raise ValueError("Renewal state needs local repair: " + path.name)
         for key in ("anchor", "at", "started_at", "completed_at", "next_due"):
             if key in value and (
-                type(value[key]) not in (int, float)
-                or not math.isfinite(value[key])
+                not finite_number(value[key])
                 or value[key] < 0
                 or (key != "next_due" and value[key] > time.time() + 300)
             ):

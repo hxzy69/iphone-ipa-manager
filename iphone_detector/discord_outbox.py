@@ -3,9 +3,8 @@
 import hashlib
 import json
 import time
-import math
 
-from iphone_detector.storage import write_json
+from iphone_detector.storage import finite_number, write_json
 
 
 def enqueue(root, key, message):
@@ -67,8 +66,7 @@ def pending(root, settings):
                 or value.get("audience") != settings
                 or not isinstance(value.get("message"), str)
                 or not 0 < len(value["message"]) <= 1800
-                or type(value.get("created")) not in (int, float)
-                or not math.isfinite(value["created"])
+                or not finite_number(value.get("created"))
                 or not 0 <= value["created"] <= time.time() + 5
             ):
                 continue

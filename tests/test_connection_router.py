@@ -9,6 +9,39 @@ from iphone_detector import connection_router as router
 
 
 class RouterTests(unittest.TestCase):
+    def test_tailscale_candidate_ignores_malformed_and_non_iphone_peers(self):
+        status = {
+            "BackendState": "Running",
+            "Peer": {
+                "broken": None,
+                "other": {
+                    "OS": "linux",
+                    "TailscaleIPs": ["100.64.0.10"],
+                    "CurAddr": "192.168.1.8:99",
+                },
+                "phone": {
+                    "OS": "iOS",
+                    "TailscaleIPs": ["100.64.0.10"],
+                    "CurAddr": "192.168.1.7:99",
+                },
+            },
+        }
+        with patch.object(router.subprocess, "check_output", return_value=json.dumps(status)):
+            self.assertEqual(router.tailscale_candidate({"ip": "100.64.0.10"}), "192.168.1.7")
+        status["Peer"]["phone"]["CurAddr"] = 42
+        with patch.object(router.subprocess, "check_output", return_value=json.dumps(status)):
+            self.assertIsNone(router.tailscale_candidate({"ip": "100.64.0.10"}))
+
+    def test_invalid_adapter_address_does_not_hide_valid_local_network(self):
+        adapter = Mock(name="LAN", nice_name="Ethernet")
+        adapter.name = "LAN"
+        adapter.ips = [
+            Mock(ip="invalid", network_prefix=24),
+            Mock(ip="192.168.1.8", network_prefix=24),
+        ]
+        with patch("ifaddr.get_adapters", return_value=[adapter]):
+            self.assertEqual(router.local_networks(), [ipaddress.ip_network("192.168.1.0/24")])
+
     def test_only_on_link_private_addresses_are_candidates(self):
         networks = [ipaddress.ip_network("192.168.1.0/24")]
         self.assertTrue(router.on_link("192.168.1.7", networks))

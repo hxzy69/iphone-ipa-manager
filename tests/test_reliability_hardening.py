@@ -33,6 +33,31 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(sent.await_count, 1)
             self.assertEqual(outbox.pending(root, settings), [])
 
+    def test_oversized_timestamps_do_not_break_worker_or_notification_status(self):
+        from iphone_detector import job_queue, worker_registry
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            jobs = root / "gui-jobs" / "damaged"
+            jobs.mkdir(parents=True)
+            (jobs / "worker.json").write_text(
+                json.dumps({"state": "running", "pid": 1, "process_created": 10**500})
+            )
+            self.assertEqual(worker_registry.active_jobs(root), [])
+            (jobs / "worker.json").write_text(
+                json.dumps({"state": "running", "pid": 10**500, "process_created": 1})
+            )
+            self.assertEqual(worker_registry.active_jobs(root), [])
+            self.assertFalse(job_queue.alive({"pid": 1, "process_created": 10**500}))
+            self.assertFalse(job_queue.alive({"pid": 10**500, "process_created": 1}))
+            folder = root / "discord-outbox"
+            folder.mkdir()
+            audience = {"user_id": 1, "guild_id": 2, "channel_id": 3}
+            (folder / "damaged.json").write_text(
+                json.dumps({"audience": audience, "message": "status", "created": 10**500})
+            )
+            self.assertEqual(outbox.pending(root, audience), [])
+
     def test_reports_never_move_to_a_new_configured_owner_or_channel(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -82,7 +107,13 @@ class ReliabilityTests(unittest.TestCase):
                 patch.object(auto.subprocess, "Popen") as launch,
             ):
                 auto.CONFIG.write_text(json.dumps({"enabled": True, "anchor": 0}))
-                for invalid in ("{", "[]", '{"pending_job":"job"}', '{"started_at":NaN}'):
+                for invalid in (
+                    "{",
+                    "[]",
+                    '{"pending_job":"job"}',
+                    '{"started_at":NaN}',
+                    json.dumps({"started_at": 10**500}),
+                ):
                     auto.STATE.write_text(invalid)
                     auto.tick()
                     self.assertIn("needs attention", auto.describe())
@@ -104,6 +135,7 @@ class ReliabilityTests(unittest.TestCase):
                 {"state": "ready"},
                 {"state": "ready", "updated": "now"},
                 {"state": "ready", "updated": float("nan")},
+                {"state": "ready", "updated": 10**500},
                 {"state": "ready", "updated": 10000},
                 {"state": "anything", "updated": 100},
             ):

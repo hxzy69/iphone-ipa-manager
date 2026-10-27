@@ -3,7 +3,6 @@
 from contextlib import contextmanager
 import json
 import logging
-import math
 import os
 import subprocess
 import time
@@ -12,7 +11,7 @@ import uuid
 import psutil
 
 from iphone_detector.paths import DATA_ROOT
-from iphone_detector.storage import write_json
+from iphone_detector.storage import finite_number, write_json
 from iphone_detector.run_lock import RunLock
 
 ROOT = DATA_ROOT / "queue"
@@ -80,13 +79,19 @@ def pending():
     return [entry for entry in entries() if entry["state"] in ("queued", "running")]
 
 
-def enqueue(mode="install", accounts=None):
+def enqueue(mode="install", accounts=None, *, expected_email=None):
     from iphone_detector.background import make_job
     from iphone_detector.config import load_config
 
     if mode not in ("install", "refresh") or (mode == "refresh" and accounts is not None):
         raise ValueError("Choose install, or refresh for all accounts.")
     selection = make_job(load_config() or {}, "Network", accounts=accounts)
+    if expected_email is not None and (
+        accounts is None
+        or len(selection["accounts"]) != 1
+        or selection["accounts"][0]["email"] != expected_email
+    ):
+        raise ValueError("The selected account changed. Refresh the dashboard and select it again.")
     with guard():
         from iphone_detector.job_history import read
 
@@ -155,9 +160,8 @@ def alive(entry):
     # JSON permits NaN, and bool is an int subclass. Neither is process identity.
     if (
         type(entry.get("pid")) is not int
-        or entry["pid"] <= 0
-        or type(entry.get("process_created")) not in (int, float)
-        or not math.isfinite(entry["process_created"])
+        or not 0 < entry["pid"] <= 0xFFFFFFFF
+        or not finite_number(entry.get("process_created"))
         or entry["process_created"] <= 0
     ):
         return False

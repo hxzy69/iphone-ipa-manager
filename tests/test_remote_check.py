@@ -48,6 +48,18 @@ class RemoteCheckTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 remote.select_peer(status)
 
+    def test_malformed_peer_records_do_not_break_valid_peer_discovery(self):
+        status = {
+            "BackendState": "Running",
+            "Peer": {"bad": None, "bad-os": {"OS": None}, "iphone": peer()},
+        }
+        self.assertEqual(remote.select_peer(status), "100.64.0.10")
+        status["Peer"]["iphone"]["TailscaleIPs"].insert(0, "invalid-address")
+        self.assertEqual(remote.select_peer(status), "100.64.0.10")
+        for invalid in (None, [], {"BackendState": "Running", "Peer": [1]}):
+            with self.assertRaises(RuntimeError):
+                remote.select_peer(invalid)
+
     def test_wrong_tls_certificate_is_rejected_and_closed(self):
         context = Mock()
         context.wrap_socket.return_value.getpeercert.return_value = b"wrong certificate"

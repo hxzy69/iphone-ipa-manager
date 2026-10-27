@@ -317,14 +317,22 @@ class ManagementDialog:
         from iphone_detector import job_queue
 
         index = self.account.current()
-        self.perform(
-            lambda: (
-                "Queued "
-                + job_queue.enqueue(mode, [index - 1] if mode == "install" and index > 0 else None)[
-                    "id"
-                ]
-            )
-        )
+        label = self.account.get()
+        if mode == "install" and index < 0:
+            messagebox.showerror("Dashboard", "Choose an account first.", parent=self.window)
+            return
+
+        def operation():
+            selected = [index - 1] if mode == "install" and index > 0 else None
+            options = {}
+            if selected is not None:
+                prefix = f"{index} — "
+                if not label.startswith(prefix):
+                    raise ValueError("Refresh the dashboard and choose the account again.")
+                options["expected_email"] = label[len(prefix) :]
+            return "Queued " + job_queue.enqueue(mode, selected, **options)["id"]
+
+        self.perform(operation)
 
     def toggle_startup(self):
         self.startup_value = self.startup.get()
@@ -358,7 +366,13 @@ class ManagementDialog:
             return
 
         def operation():
-            job = next(path for path in operations.jobs(DATA_ROOT) if path.name == selected[0])
+            job = next(
+                (path for path in operations.jobs(DATA_ROOT) if path.name == selected[0]), None
+            )
+            if job is None:
+                raise ValueError(
+                    "This run is no longer available. Refresh the history and try again."
+                )
             accounts = operations.retry_plan(job, load_config() or {})
             return "Queued retry " + job_queue.enqueue("install", accounts)["id"]
 

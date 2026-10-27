@@ -5,7 +5,7 @@ import json
 import math
 import time
 
-from iphone_detector.storage import write_json
+from iphone_detector.storage import finite_number, write_json
 from iphone_detector.job_history import read
 
 
@@ -164,6 +164,8 @@ def collect_native(job):
         return
     for line in lines:
         try:
+            if "\ufffd" in line:
+                continue  # Never trust an event containing undecodable bytes.
             event = json.loads(line)
             number = event.get("account")
             if event.get("stage") != "completed_account" or type(number) is not int:
@@ -195,8 +197,7 @@ def matching(receipt, request, entry, *, content=True):
             {"serial": request.get("serial"), "accounts": [entry]},
             content=content,
         )
-        and type(receipt.get("at")) in (int, float)
-        and math.isfinite(receipt["at"])
+        and finite_number(receipt.get("at"))
         and 0 <= receipt["at"] <= time.time() + 5
     )
 
@@ -256,17 +257,17 @@ def account_status(root, config, *, verify_content=True):
         receipt = read(index_path(root, request.get("serial"), entry))
         if matching(receipt, request, entry, content=verify_content):
             rows[entry["account"]] = receipt
-    missing = [entry for entry in request["accounts"] if entry["account"] not in rows]
-    if not missing:
-        return rows
+    indexed = set(rows)
+    # A crash can occur after a job receipt is durable but before its index is
+    # updated. Reconcile history even when an older valid index already exists.
     for job in jobs(root, limit=None):
-        for entry in missing:
+        for entry in request["accounts"]:
             number = entry["account"]
             receipt = read(job / f"completed-{number}.json")
             if matching(receipt, request, entry, content=verify_content):
                 if number not in rows or receipt["at"] > rows[number]["at"]:
                     rows[number] = receipt
-    for entry in missing:
-        if entry["account"] in rows:
+    for entry in request["accounts"]:
+        if entry["account"] in rows and entry["account"] not in indexed:
             write_json(index_path(root, request.get("serial"), entry), rows[entry["account"]])
     return rows

@@ -374,6 +374,19 @@ class DiscordTests(unittest.TestCase):
             )
             self.assertEqual(controller.progress(), "Installing — account 2.")
 
+    def test_progress_reports_usb_route_and_tolerates_unreadable_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = bot.Controller()
+            controller.expected = 1
+            controller.job = Path(directory)
+            (controller.job / "backend-events.jsonl").write_text(
+                json.dumps({"stage": "install", "account": 1}) + "\n"
+            )
+            (controller.job / "route.json").write_text(json.dumps({"transport": "usb"}))
+            self.assertEqual(controller.progress(), "Installing — account 1 of 1. USB.")
+            with patch.object(Path, "read_text", side_effect=PermissionError("unavailable")):
+                self.assertEqual(controller.progress(), "Ready.")
+
     def test_start_with_account_spawns_worker_with_account_flag(self):
         controller = bot.Controller()
         with (

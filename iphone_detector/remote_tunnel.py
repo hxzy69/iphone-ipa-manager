@@ -4,7 +4,6 @@ import asyncio
 from contextlib import AsyncExitStack, asynccontextmanager
 import json
 import logging
-import math
 import os
 from pathlib import Path
 import subprocess
@@ -14,6 +13,7 @@ import plistlib
 import zipfile
 
 from iphone_detector.paths import DATA_ROOT, FROZEN, profile_lock_name
+from iphone_detector.storage import finite_number
 from iphone_detector.wifi import canonical_serial
 
 LOG = logging.getLogger("iphone-detector.remote")
@@ -54,8 +54,7 @@ def state():
         if (
             isinstance(data, dict)
             and data.get("state") in ("ready", "installing", "waiting", "connecting", "offline")
-            and type(data.get("updated")) in (int, float)
-            and math.isfinite(data["updated"])
+            and finite_number(data.get("updated"))
             and -5 <= time.time() - data["updated"] < 45
         ):
             return data
@@ -282,8 +281,15 @@ async def install(rsd, path, existing=None, streams=1):
             timing["installation_seconds"] = time.monotonic() - install_started
             verify_started = time.monotonic()
             transfer_progress(path, timing, "verify")
-            if identifier not in await lookup(rsd):
+            verified_apps = await lookup(rsd)
+            if identifier not in verified_apps:
                 raise RuntimeError("Installed app was not found during verification.")
+            if existing is not None:
+                # Keep the job's app inventory current for subsequent accounts.
+                # A later archive for the same bundle must use Upgrade, not Install.
+                verified_apps = dict(verified_apps)
+                existing.clear()
+                existing.update(verified_apps)
             timing.update(verified=True, verification_seconds=time.monotonic() - verify_started)
             transfer_progress(path, timing, "completed")
         finally:

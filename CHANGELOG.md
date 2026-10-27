@@ -10,6 +10,20 @@
   Corrupt existing report records no longer count as successfully queued.
 - Recover valid native completion events even when another event log line contains
   invalid UTF-8, rather than aborting collection of the entire log.
+- Harden Tailscale peer selection and local-network enumeration against malformed
+  status replies, and refresh the installed-app inventory after each verified
+  install so later accounts in a job upgrade instead of reinstalling.
+- Validate shared saved numbers through one finite-number helper so queue, worker
+  registry, outbox, renewal, and receipt checks reject NaN and overflowing values
+  uniformly, and reconcile a receipt index that a crash left behind after its job
+  receipt was durable.
+- Re-check an account chosen in a dialog before acting: dashboard queue and retry,
+  GUI import, and Discord flows verify the account is unchanged and name a
+  still-existing run before dispatching.
+- Vendor patched block-buffer 0.10.4 with checked cursor assertions and regression
+  tests, and build the native worker with panic = abort so a panicking worker
+  stops instead of resuming possibly inconsistent state. Advisory
+  GHSA-qwgh-2vcv-g2f7 remains open; see docs/BLOCK_BUFFER_ASSESSMENT.md.
 - Add regression coverage for these failure and recovery paths.
 
 ## 0.3.1 — live status recovery — 2026-10-25

@@ -21,7 +21,8 @@ class QueueRecoveryTests(unittest.TestCase):
         job.mkdir(parents=True)
         write_json(job / "backend-job.json", {"accounts": [{"account": 1}], "serial": "phone"})
         (job / "backend-events.jsonl").write_bytes(
-            b'{"stage":"completed_account","account":1}\n\xffbad\n'
+            b'{"stage":"completed_account","account":1}\n'
+            b'{"stage":"completed_account","account":2,"detail":"\xff"}\n'
         )
         with patch.object(operations, "record") as record:
             operations.collect_native(job)

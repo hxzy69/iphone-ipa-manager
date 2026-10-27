@@ -129,6 +129,16 @@ class WorkflowUpgradeTests(unittest.TestCase):
             self.assertIn("queue-" + second["id"], str(spawn.call_args.args))
             self.assertEqual(job_queue.entries()[0]["state"], "completed")
 
+    def test_queue_rejects_an_account_replaced_after_dashboard_selection(self):
+        from iphone_detector.settings import get_workflow
+
+        email = get_workflow(self.config)[0]["email"]
+        with self.assertRaisesRegex(ValueError, "account changed"):
+            job_queue.enqueue(accounts=[0], expected_email="different@example.com")
+        self.assertEqual(job_queue.entries(), [])
+        entry = job_queue.enqueue(accounts=[0], expected_email=email)
+        self.assertEqual(entry["selection"]["accounts"][0]["email"], email)
+
     def test_interruption_pauses_later_requests_until_explicit_dismissal(self):
         first = job_queue.enqueue(accounts=[0])
         job_queue.enqueue(accounts=[1])

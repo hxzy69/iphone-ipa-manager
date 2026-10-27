@@ -16,9 +16,20 @@ from iphone_detector.wifi import canonical_serial, exact, lockdown
 
 
 def select_peer(status, requested=None):
-    if status.get("BackendState") != "Running":
+    if not isinstance(status, dict) or status.get("BackendState") != "Running":
         raise RuntimeError("Sign this PC into Tailscale first.")
-    peers = [p for p in (status.get("Peer") or {}).values() if p.get("OS", "").lower() == "ios"]
+    all_peers = status.get("Peer") or {}
+    if not isinstance(all_peers, dict):
+        raise RuntimeError("Tailscale returned an invalid peer list. Try again later.")
+    peers = [
+        p
+        for p in all_peers.values()
+        if isinstance(p, dict)
+        and isinstance(p.get("OS"), str)
+        and p["OS"].lower() == "ios"
+        and isinstance(p.get("TailscaleIPs"), list)
+        and all(isinstance(ip, str) for ip in p["TailscaleIPs"])
+    ]
     if requested:
         peers = [p for p in peers if requested in p.get("TailscaleIPs", [])]
     if len(peers) != 1:
@@ -26,12 +37,14 @@ def select_peer(status, requested=None):
     peer = peers[0]
     if peer.get("Online") is False:
         raise RuntimeError("The selected iPhone is offline in Tailscale.")
-    addresses = [
-        ip
-        for ip in peer.get("TailscaleIPs", [])
-        if ipaddress.ip_address(ip).version == 4
-        and ipaddress.ip_address(ip) in ipaddress.ip_network("100.64.0.0/10")
-    ]
+    addresses = []
+    for ip in peer["TailscaleIPs"]:
+        try:
+            address = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if address.version == 4 and address in ipaddress.ip_network("100.64.0.0/10"):
+            addresses.append(ip)
     if requested:
         addresses = [ip for ip in addresses if ip == requested]
     if len(addresses) != 1:

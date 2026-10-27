@@ -134,6 +134,13 @@ class BuildControlTests(unittest.TestCase):
                 self.assertEqual(len(result["findings"]), 1)
                 self.assertEqual(result["accepted"], [])
 
+    def test_vendored_block_buffer_remains_in_the_dependency_audit(self):
+        auditor = tool("security_audit")
+        self.assertIn(
+            {"package": {"name": "block-buffer", "ecosystem": "crates.io"}, "version": "0.10.4"},
+            auditor.packages(),
+        )
+
     def test_inventory_uses_canonical_package_urls(self):
         auditor = tool("security_audit")
         with patch.object(

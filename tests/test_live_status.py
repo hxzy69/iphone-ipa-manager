@@ -48,8 +48,9 @@ class LiveStatusTests(unittest.TestCase):
                 server.update("ready")
                 with live.connect(server.name) as client:
                     client.send_bytes(b"restart-service")
-                    self.assertTrue(client.poll(1))
-                    with self.assertRaises(EOFError):
+                    # Windows may report the closed pipe during poll or recv.
+                    with self.assertRaises((EOFError, BrokenPipeError)):
+                        self.assertTrue(client.poll(1))
                         client.recv_bytes()
                 with patch.object(live, "trusted_server", return_value=True):
                     self.assertEqual(live.query(root)["tunnel"], "ready")

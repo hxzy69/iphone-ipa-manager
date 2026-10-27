@@ -2,10 +2,9 @@
 
 import psutil
 import time
-import math
 import logging
 
-from iphone_detector.storage import write_json
+from iphone_detector.storage import finite_number, write_json
 from iphone_detector.job_history import read
 
 
@@ -48,12 +47,10 @@ def active_jobs(root):
             try:
                 if (
                     type(value.get("pid")) is not int
-                    or value["pid"] <= 0
-                    or type(value.get("process_created")) not in (int, float)
-                    or not math.isfinite(value["process_created"])
+                    or not 0 < value["pid"] <= 0xFFFFFFFF
+                    or not finite_number(value.get("process_created"))
                     or value["process_created"] <= 0
-                    or type(value.get("started_at")) not in (int, float)
-                    or not math.isfinite(value["started_at"])
+                    or not finite_number(value.get("started_at"))
                     or not 0 <= value["started_at"] <= time.time() + 5
                     or not isinstance(value.get("mode"), str)
                     or not isinstance(value.get("accounts"), list)

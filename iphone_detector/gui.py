@@ -542,6 +542,20 @@ class App:
             raise ValueError(
                 "Accounts were removed externally. Reopen the GUI to reload its account list safely."
             )
+        if not force:
+            previous_accounts = get_workflow(self.config)
+            for index, (old, new) in enumerate(zip(previous_accounts, workflow)):
+                key = "ipa%d" % index
+                local = self.names[index].get()
+                if (
+                    old["email"] != new["email"]
+                    and local != self.sync_baseline[key]
+                    and local != remote[key]
+                ):
+                    raise ValueError(
+                        "Account %d changed elsewhere while its IPA has an unsaved edit. "
+                        "Use Reload saved before changing that account." % (index + 1)
+                    )
         for index in range(len(self.names), len(workflow)):
             self.add_account_card(index, workflow[index])
             self.sync_baseline["ipa%d" % index] = remote["ipa%d" % index]
@@ -866,6 +880,7 @@ class App:
                         files.selection_set(i)
 
         ttk.Label(body, text="Assign to account").pack(anchor="w", pady=(12, 4))
+        opened_account_emails = [entry["email"] for entry in self.accounts]
         account = ttk.Combobox(
             body,
             state="readonly",
@@ -909,6 +924,13 @@ class App:
             source = paths[files.curselection()[0]]
             chosen = account.current()
             if not self.save():
+                return
+            from iphone_detector.gui_sync import same_account
+
+            if not same_account(opened_account_emails, self.accounts, chosen):
+                import_status.set(
+                    "That account changed while this window was open. Close and reopen Import IPA."
+                )
                 return
             folder = self.folder.get()
             chosen_account = self.accounts[chosen].copy()

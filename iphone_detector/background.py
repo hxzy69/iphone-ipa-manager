@@ -180,7 +180,7 @@ def run_background(
                     process.terminate()
                 events = job / "backend-events.jsonl"
                 if events.exists():
-                    with events.open(encoding="utf-8") as file:
+                    with events.open(encoding="utf-8", errors="replace") as file:
                         file.seek(offset)
                         while True:
                             position = file.tell()
@@ -188,6 +188,9 @@ def run_background(
                             if not line or not line.endswith("\n"):
                                 file.seek(position)
                                 break
+                            if "\ufffd" in line:
+                                LOG.warning("Ignored an undecodable backend progress event.")
+                                continue
                             try:
                                 data = json.loads(line)
                             except ValueError:

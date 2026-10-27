@@ -29,6 +29,7 @@ try {
             $env:CXXFLAGS = $env:CFLAGS
             Invoke-Checked 'cargo' @('build', '--locked', '--release', '--manifest-path', 'native/Cargo.toml')
             Invoke-Checked 'cargo' @('test', '--locked', '--release', '--manifest-path', 'native/Cargo.toml')
+            Invoke-Checked 'cargo' @('test', '--locked', '--release', '--manifest-path', 'vendor/block-buffer/Cargo.toml')
         } finally {
             $env:RUSTFLAGS = $previousRustFlags
             $env:CARGO_ENCODED_RUSTFLAGS = $previousEncodedFlags

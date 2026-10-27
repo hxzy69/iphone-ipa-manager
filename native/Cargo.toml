@@ -13,6 +13,7 @@ path = "src/main.rs"
 [patch.crates-io]
 apple-codesign-quick = { path = "../vendor/apple-codesign-quick" }
 isideload = { path = "../vendor/isideload" }
+block-buffer = { path = "../vendor/block-buffer" }
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -28,5 +29,12 @@ rootcause = "0.12.1"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
 
+[dev-dependencies]
+# Keep the advisory regression test tied to the transitive version in use.
+block-buffer = "=0.10.4"
+
 [profile.release]
 strip = "debuginfo"
+# Do not resume a native worker after a Rust panic. The controller treats a
+# terminated worker as an uncertain operation and requires explicit recovery.
+panic = "abort"

@@ -21,6 +21,7 @@ def packages():
         if package.get("source", "").startswith("registry+") or package["name"] in (
             "isideload",
             "apple-codesign-quick",
+            "block-buffer",
         ):
             values.append(
                 {

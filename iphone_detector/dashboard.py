@@ -15,7 +15,7 @@ from iphone_detector.operations import account_status, jobs
 def date(value):
     try:
         return datetime.fromtimestamp(value).astimezone().strftime("%d %b %H:%M")
-    except TypeError, ValueError, OSError:
+    except TypeError, ValueError, OSError, OverflowError:
         return "Unknown"
 
 
@@ -46,7 +46,7 @@ def connection(root=DATA_ROOT):
                     value = uploaded / elapsed / (1024 * 1024)
                     if math.isfinite(value):
                         speed = round(value, 2)
-            except KeyError, TypeError, ValueError:
+            except KeyError, TypeError, ValueError, OverflowError:
                 pass
             break
     reasons = {

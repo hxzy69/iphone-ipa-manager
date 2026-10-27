@@ -10,6 +10,23 @@ from fixtures import ACCOUNTS as DEFAULT_ACCOUNTS
 
 
 class BackgroundTests(unittest.TestCase):
+    def test_native_abort_never_counts_as_success_even_with_a_success_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job = Path(directory)
+            (job / "backend-result.json").write_text(
+                json.dumps({"ok": True, "completed_accounts": 1})
+            )
+            process = Mock(returncode=3, poll=Mock(return_value=3))
+            with (
+                patch.object(background, "cache_executable", return_value=Path("backend.exe")),
+                patch.object(background.subprocess, "Popen", return_value=process) as spawn,
+            ):
+                with self.assertRaises(RuntimeError):
+                    background.run_background(
+                        job, Mock(), request_override={"accounts": [{"account": 1}]}
+                    )
+            spawn.assert_called_once()
+
     def test_truthy_and_untyped_backend_results_cannot_claim_verified_completion(self):
         values = (
             [],
@@ -37,8 +54,9 @@ class BackgroundTests(unittest.TestCase):
             (job / "backend-result.json").write_text(
                 json.dumps({"ok": True, "completed_accounts": 1})
             )
-            (job / "backend-events.jsonl").write_text(
-                'broken\n[]\n{}\n{"stage":"completed_account","account":1}\n'
+            (job / "backend-events.jsonl").write_bytes(
+                b'broken\n[]\n{}\n{"stage":"progress","detail":"\xff"}\n'
+                b'{"stage":"completed_account","account":1}\n'
             )
             process = Mock(returncode=0)
             process.poll.side_effect = [None, 0, 0]

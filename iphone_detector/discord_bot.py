@@ -176,8 +176,9 @@ class Controller:
                 raise RuntimeError(
                     "Connect the paired iPhone by USB, or configure a local/remote connection. Use /queue to wait for connectivity."
                 )
-        chosen = selected_accounts(get_workflow(load_config() or {}), accounts)
-        request = make_job(load_config() or {}, "Network", accounts=accounts)
+        config = load_config() or {}
+        chosen = selected_accounts(get_workflow(config), accounts)
+        request = make_job(config, "Network", accounts=accounts)
         self.job = (
             DATA_ROOT
             / "automation-runs"
@@ -231,10 +232,12 @@ class Controller:
 
     def progress(self):
         path = self.job / "backend-events.jsonl"
-        if not path.exists():
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
             return self.state
         scope = "" if self.accounts else " of %d" % self.expected
-        for line in reversed(path.read_text(encoding="utf-8", errors="replace").splitlines()):
+        for line in reversed(lines):
             try:
                 event = json.loads(line)
             except ValueError:
@@ -287,8 +290,12 @@ class Controller:
                 route = json.loads((self.job / "route.json").read_text(encoding="utf-8"))[
                     "transport"
                 ]
-                description += " Local Wi-Fi." if route == "local-wifi" else " Remote tunnel."
-            except OSError, ValueError, KeyError:
+                description += {
+                    "local-wifi": " Local Wi-Fi.",
+                    "remote": " Remote tunnel.",
+                    "usb": " USB.",
+                }.get(route, "")
+            except OSError, ValueError, KeyError, TypeError:
                 pass
             return description
         return self.state

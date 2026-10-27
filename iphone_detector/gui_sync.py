@@ -4,6 +4,16 @@ from pathlib import Path
 from iphone_detector.settings import get_workflow
 
 
+def same_account(opened_emails, current_accounts, index):
+    """Ensure a dialog's selected slot still names the account it displayed."""
+    return (
+        type(index) is int
+        and 0 <= index < len(opened_emails)
+        and index < len(current_accounts)
+        and opened_emails[index] == current_accounts[index]["email"]
+    )
+
+
 def fields(config):
     automation = config.get("automation", {})
     result = {

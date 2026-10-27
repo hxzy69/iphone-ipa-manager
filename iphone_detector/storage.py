@@ -1,10 +1,21 @@
 """Durable atomic JSON replacement shared by independent Windows processes."""
 
 import json
+import math
 import os
 from pathlib import Path
 import tempfile
 import time
+
+
+def finite_number(value):
+    """Reject malformed JSON numbers without overflowing float conversion."""
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def write_json(path, value, *, exclusive=False):

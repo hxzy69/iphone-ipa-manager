@@ -70,6 +70,31 @@ class RemoteTunnelTests(unittest.TestCase):
         installer.send_package.assert_awaited_once()
         afc.rm_single.assert_awaited_once()
 
+    def test_successful_install_updates_inventory_for_the_next_account(self):
+        afc, installer = AsyncMock(), AsyncMock()
+        afc_context, install_context = MagicMock(), MagicMock()
+        afc_context.__aenter__.return_value = afc
+        install_context.__aenter__.return_value = installer
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.object(remote, "bundle_id", return_value="signed.app"),
+            patch.object(remote, "lookup", new_callable=AsyncMock, return_value={"signed.app": {}}),
+            patch("pymobiledevice3.services.afc.AfcService", return_value=afc_context),
+            patch(
+                "pymobiledevice3.services.installation_proxy.InstallationProxyService",
+                return_value=install_context,
+            ),
+        ):
+            path = Path(folder) / "signed.ipa"
+            path.write_bytes(b"archive")
+            inventory = {}
+            asyncio.run(remote.install(Mock(), path, inventory))
+            asyncio.run(remote.install(Mock(), path, inventory))
+        self.assertEqual(
+            [call.args[0] for call in installer.send_package.await_args_list],
+            ["Install", "Upgrade"],
+        )
+
     def test_remote_compression_uses_strongest_for_relay_and_balanced_for_direct(self):
         with (
             patch.object(remote, "settings", return_value={}),

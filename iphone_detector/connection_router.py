@@ -76,7 +76,7 @@ def run_refresh(job, stop):
         remote_tunnel.atomic(job / "route.json", {"transport": "remote", "operation": "refresh"})
         return remote_tunnel.submit(job, stop)
 
-    async def execute():
+    async def execute(bridge_serial=None):
         from pymobiledevice3.lockdown import create_using_tcp, create_using_usbmux
         from pymobiledevice3.exceptions import PyMobileDevice3Exception
         from iphone_detector.remote_check import read_pair
@@ -84,13 +84,14 @@ def run_refresh(job, stop):
         try:
             client = await asyncio.wait_for(
                 create_using_usbmux(
-                    serial=usb,
+                    serial=bridge_serial or usb,
                     identifier=request["serial"],
                     pair_record=read_pair(request["serial"]),
                     autopair=False,
-                    connection_type="USB",
+                    connection_type="Network" if bridge_serial else "USB",
+                    **({"usbmux_address": "127.0.0.1:27015"} if bridge_serial else {}),
                 )
-                if usb
+                if usb or bridge_serial
                 else create_using_tcp(
                     local,
                     identifier=request["serial"],
@@ -114,9 +115,10 @@ def run_refresh(job, stop):
                 job / "remote-request.json",
                 {"accounts": [a["account"] for a in request["accounts"]], "execution": "local"},
             )
-            remote_tunnel.atomic(
-                job / "route.json", {"transport": transport, "operation": "refresh"}
-            )
+            route = {"transport": transport, "operation": "refresh"}
+            if bridge_serial:
+                route["protocol"] = "wifi-bridge"
+            remote_tunnel.atomic(job / "route.json", route)
             # execute_job supplies signing, fallback, cancellation and verified receipts.
             operation = asyncio.create_task(remote_tunnel.execute_job(job, client))
             try:
@@ -142,6 +144,38 @@ def run_refresh(job, stop):
                 return run_local_tunnel(job, stop, local, refresh=True)
             except LocalRefreshUnavailable:
                 stop.check()
+        if local:
+            from iphone_detector.bridge_service import installed
+            from iphone_detector.wifi import WifiBridge
+
+            if installed():
+                bridge = WifiBridge(
+                    job, request["serial"], stop, allow_elevation=False, connect_timeout=15
+                )
+                try:
+                    bridge.__enter__()
+                except Exception:
+                    stop.check()
+                    if not bridge.cleanup_verified:
+                        raise RuntimeError(
+                            "Local connection cleanup could not be verified. Remote fallback cancelled."
+                        )
+                    LOG.info("Wi-Fi bridge preflight unavailable for renewal.")
+                else:
+                    try:
+                        try:
+                            asyncio.run(execute(bridge.device["serial"]))
+                        except LocalRefreshUnavailable:
+                            stop.check()
+                            LOG.info("Wi-Fi bridge renewal preflight unavailable.")
+                        else:
+                            result = json.loads(
+                                (job / "remote-result.json").read_text(encoding="utf-8")
+                            )
+                            remote_tunnel.completed_result(result, len(request["accounts"]))
+                            return dict(result, transport="local-wifi")
+                    finally:
+                        bridge.__exit__(None, None, None)
         LOG.info(
             "Local renewal preflight was unavailable; using the authenticated remote tunnel before submitting device work."
         )

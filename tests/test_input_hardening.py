@@ -1,6 +1,7 @@
 """Regression cases from the commercial-readiness review, using isolated inputs."""
 
 import asyncio
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -293,6 +294,7 @@ class InputHardeningTests(unittest.TestCase):
         client = Mock(udid="sample-phone", close=AsyncMock())
         with (
             patch("iphone_detector.config.load_config", return_value=self.config),
+            patch("iphone_detector.bridge_service.installed", return_value=False),
             patch("iphone_detector.remote_tunnel.settings", return_value={}),
             patch.object(connection_router, "find_local", return_value="192.168.1.7"),
             patch("iphone_detector.remote_check.read_pair", return_value={}),
@@ -314,6 +316,133 @@ class InputHardeningTests(unittest.TestCase):
         submit.assert_called_once()
         client.close.assert_awaited_once()
         self.assertFalse((self.job / "remote-request.json").exists())
+
+    def test_refresh_uses_authenticated_wifi_bridge_after_direct_preflight_failure(self):
+        from pymobiledevice3.exceptions import ConnectionTerminatedError
+
+        direct = Mock(udid="sample-phone", close=AsyncMock())
+        bridged = Mock(udid="sample-phone", close=AsyncMock())
+        bridge = Mock(device={"serial": "sample-phone"}, cleanup_verified=True)
+        bridge.__enter__ = Mock(return_value=bridge)
+        bridge.__exit__ = Mock()
+
+        async def execute(job, session):
+            self.assertIs(session, bridged)
+            write_json(job / "remote-result.json", {"ok": True, "completed_accounts": 1})
+
+        stop = Mock()
+        stop.cancelled.is_set.return_value = False
+        with (
+            patch("iphone_detector.config.load_config", return_value=self.config),
+            patch("iphone_detector.remote_tunnel.settings", return_value={}),
+            patch("iphone_detector.remote_tunnel.enabled", return_value=False),
+            patch.object(connection_router, "find_local", return_value="192.168.1.7"),
+            patch("iphone_detector.remote_check.read_pair", return_value={}),
+            patch("iphone_detector.bridge_service.installed", return_value=True),
+            patch("iphone_detector.wifi.WifiBridge", return_value=bridge),
+            patch(
+                "pymobiledevice3.lockdown.create_using_tcp",
+                new_callable=AsyncMock,
+                return_value=direct,
+            ),
+            patch(
+                "pymobiledevice3.lockdown.create_using_usbmux",
+                new_callable=AsyncMock,
+                return_value=bridged,
+            ) as connect,
+            patch(
+                "iphone_detector.remote_tunnel.lookup",
+                new_callable=AsyncMock,
+                side_effect=[ConnectionTerminatedError(), {}],
+            ),
+            patch("iphone_detector.remote_tunnel.execute_job", side_effect=execute),
+            patch("iphone_detector.remote_tunnel.submit") as remote,
+        ):
+            result = connection_router.run_refresh(self.job, stop)
+        self.assertEqual(result["transport"], "local-wifi")
+        self.assertEqual(connect.call_args.kwargs["connection_type"], "Network")
+        self.assertEqual(connect.call_args.kwargs["usbmux_address"], "127.0.0.1:27015")
+        self.assertEqual(
+            json.loads((self.job / "route.json").read_text())["protocol"], "wifi-bridge"
+        )
+        bridge.__exit__.assert_called_once()
+        remote.assert_not_called()
+
+    def test_wifi_bridge_cleanup_failure_prevents_remote_retry(self):
+        from pymobiledevice3.exceptions import ConnectionTerminatedError
+
+        client = Mock(udid="sample-phone", close=AsyncMock())
+        bridge = Mock(cleanup_verified=False)
+        bridge.__enter__ = Mock(side_effect=RuntimeError("bridge failed"))
+        with (
+            patch("iphone_detector.config.load_config", return_value=self.config),
+            patch("iphone_detector.remote_tunnel.settings", return_value={}),
+            patch("iphone_detector.remote_tunnel.enabled", return_value=False),
+            patch.object(connection_router, "find_local", return_value="192.168.1.7"),
+            patch("iphone_detector.remote_check.read_pair", return_value={}),
+            patch("iphone_detector.bridge_service.installed", return_value=True),
+            patch("iphone_detector.wifi.WifiBridge", return_value=bridge),
+            patch(
+                "pymobiledevice3.lockdown.create_using_tcp",
+                new_callable=AsyncMock,
+                return_value=client,
+            ),
+            patch(
+                "iphone_detector.remote_tunnel.lookup",
+                new_callable=AsyncMock,
+                side_effect=ConnectionTerminatedError(),
+            ),
+            patch("iphone_detector.remote_tunnel.submit") as remote,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "cleanup"):
+                connection_router.run_refresh(self.job, Mock())
+        remote.assert_not_called()
+
+    def test_wifi_bridge_failure_after_dispatch_never_replays_on_remote(self):
+        from pymobiledevice3.exceptions import ConnectionTerminatedError
+
+        direct = Mock(udid="sample-phone", close=AsyncMock())
+        bridged = Mock(udid="sample-phone", close=AsyncMock())
+        bridge = Mock(device={"serial": "sample-phone"}, cleanup_verified=True)
+        bridge.__enter__ = Mock(return_value=bridge)
+        bridge.__exit__ = Mock()
+        stop = Mock()
+        stop.cancelled.is_set.return_value = False
+        with (
+            patch("iphone_detector.config.load_config", return_value=self.config),
+            patch("iphone_detector.remote_tunnel.settings", return_value={}),
+            patch("iphone_detector.remote_tunnel.enabled", return_value=False),
+            patch.object(connection_router, "find_local", return_value="192.168.1.7"),
+            patch("iphone_detector.remote_check.read_pair", return_value={}),
+            patch("iphone_detector.bridge_service.installed", return_value=True),
+            patch("iphone_detector.wifi.WifiBridge", return_value=bridge),
+            patch(
+                "pymobiledevice3.lockdown.create_using_tcp",
+                new_callable=AsyncMock,
+                return_value=direct,
+            ),
+            patch(
+                "pymobiledevice3.lockdown.create_using_usbmux",
+                new_callable=AsyncMock,
+                return_value=bridged,
+            ),
+            patch(
+                "iphone_detector.remote_tunnel.lookup",
+                new_callable=AsyncMock,
+                side_effect=[ConnectionTerminatedError(), {}],
+            ),
+            patch(
+                "iphone_detector.remote_tunnel.execute_job",
+                new_callable=AsyncMock,
+                side_effect=OSError("connection lost after dispatch"),
+            ),
+            patch("iphone_detector.remote_tunnel.submit") as remote,
+        ):
+            with self.assertRaisesRegex(OSError, "after dispatch"):
+                connection_router.run_refresh(self.job, stop)
+        self.assertTrue((self.job / "remote-request.json").exists())
+        bridge.__exit__.assert_called_once()
+        remote.assert_not_called()
 
     def test_local_failure_after_submission_never_replays_on_remote(self):
         client = Mock(udid="sample-phone", close=AsyncMock())

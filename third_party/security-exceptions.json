@@ -1,5 +1,13 @@
 [
   {
+    "id": "GHSA-qwgh-2vcv-g2f7",
+    "name": "block-buffer",
+    "ecosystem": "crates.io",
+    "version": "0.10.4",
+    "expires": "2026-11-10",
+    "reason": "The upstream maintainer corrected the affected range to >=0.11.0,<0.12.1 on 2026-10-27; OSV still reports the earlier range. This project uses the locally hardened 0.10.4 source, whose separate cursor was tested under Miri. Recheck the upstream and OSV records before expiry; this exception is limited to this advisory and version. https://github.com/RustCrypto/utils/security/advisories/GHSA-qwgh-2vcv-g2f7"
+  },
+  {
     "id": "RUSTSEC-2023-0071",
     "name": "rsa",
     "ecosystem": "crates.io",

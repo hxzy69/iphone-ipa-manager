@@ -351,7 +351,7 @@ fn to_blocks_mut<N: ArrayLength<u8>>(data: &mut [u8]) -> (&mut [Block<N>], &mut 
 
 #[cfg(test)]
 mod invariant_tests {
-    use super::{generic_array::typenum::U4, EagerBuffer};
+    use super::{generic_array::typenum::U4, EagerBuffer, LazyBuffer};
 
     #[test]
     #[should_panic(expected = "invalid buffer position")]
@@ -366,5 +366,23 @@ mod invariant_tests {
     fn invalid_internal_cursor_cannot_be_saved() {
         let mut buffer = EagerBuffer::<U4>::default();
         buffer.set_pos_unchecked(4);
+    }
+
+    #[test]
+    fn valid_boundaries_are_preserved() {
+        let mut eager = EagerBuffer::<U4>::default();
+        let mut lazy = LazyBuffer::<U4>::default();
+        eager.set_pos_unchecked(3);
+        lazy.set_pos_unchecked(4);
+        assert_eq!(eager.get_pos(), 3);
+        assert_eq!(lazy.get_pos(), 4);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid buffer position")]
+    fn corrupt_lazy_cursor_fails_closed() {
+        let mut buffer = LazyBuffer::<U4>::default();
+        buffer.pos = 5;
+        let _ = buffer.get_pos();
     }
 }

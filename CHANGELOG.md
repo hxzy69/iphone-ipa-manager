@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.3 — connection and recovery reliability — 2026-10-27
+
+- Refresh can use the authenticated Wi-Fi bridge when direct local renewal and
+  local RemotePairing fail before device work starts. A failed or uncertain
+  operation is not automatically replayed, and bridge cleanup is verified.
+- Prevent stale desktop account selections and unsaved IPA edits from applying
+  to a different account after external changes. Queueing checks the selected
+  account identity before accepting a request.
+- Reconcile account completion history after an interrupted index update and
+  continue processing valid native events when progress logs contain damaged
+  lines. Reject invalid numeric timestamps and process identities safely.
+- Handle malformed Tailscale peer and network-adapter data, report USB routes
+  correctly in Discord, and keep a job's installed-app inventory current.
+- Harden the vendored block-buffer 0.10.4 cursor checks and stop the isolated
+  native worker on panic. Include regression tests and third-party notices.
+- Document the upstream advisory's corrected affected range. The OSV audit
+  retains a version-specific, expiring exception for its stale range; the
+  existing RSA advisory exception is also included in the dependency report.
+- Add regression coverage for refresh routing, recovery, account changes and
+  the patched dependency. USB refresh/install, Wi-Fi bridge refresh/install,
+  and cellular tunnel refresh were exercised on a paired iPhone.
+
 ## 0.3.2 — recovery and notification fixes — 2026-10-27
 
 - Report separate renewal-state corruption incidents independently while suppressing
@@ -22,8 +44,8 @@
   still-existing run before dispatching.
 - Vendor patched block-buffer 0.10.4 with checked cursor assertions and regression
   tests, and build the native worker with panic = abort so a panicking worker
-  stops instead of resuming possibly inconsistent state. Advisory
-  GHSA-qwgh-2vcv-g2f7 remains open; see docs/BLOCK_BUFFER_ASSESSMENT.md.
+  stops instead of resuming possibly inconsistent state. See the updated
+  advisory assessment in docs/BLOCK_BUFFER_ASSESSMENT.md.
 - Add regression coverage for these failure and recovery paths.
 
 ## 0.3.1 — live status recovery — 2026-10-25

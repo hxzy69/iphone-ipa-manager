@@ -420,11 +420,28 @@ def attention(state):
 
 def configure(enabled):
     """Install a hidden logon + 15-minute due check; no elevation or password."""
+    from iphone_detector.paths import profile_lock_name
+    from iphone_detector.run_lock import RunLock
+
+    if type(enabled) is not bool:
+        raise ValueError("Automatic renewal must be enabled or disabled.")
+    lock = RunLock()
+    lock.name = profile_lock_name("RenewalSettings")
+    if not lock.acquire():
+        raise ValueError("Renewal settings are being changed. Wait for that save to finish.")
+    try:
+        return _configure(enabled)
+    finally:
+        lock.close()
+
+
+def _configure(enabled):
     if enabled:
         from iphone_detector.settings import get_workflow
 
         if not get_workflow():
             raise ValueError("Add and install an Apple account before enabling automatic renewal.")
+    import pywintypes
     import win32com.client
     from iphone_detector.bridge_service import current_sid
     from iphone_detector.discord_bot import command
@@ -473,6 +490,10 @@ def configure(enabled):
         atomic(
             CONFIG, dict(config, enabled=bool(enabled), anchor=config.get("anchor", time.time()))
         )
+    except (pywintypes.error, pywintypes.com_error) as exc:
+        raise OSError(
+            "Windows could not update the automatic renewal task. Saved preferences were preserved."
+        ) from exc
     finally:
         action = trigger = task = folder = scheduler = None
         uninitialize(com_owned)

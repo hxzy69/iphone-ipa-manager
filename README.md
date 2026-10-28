@@ -9,24 +9,24 @@ same saved assignments and job status.
 
 ## Download
 
-The latest Windows release is **0.3.5**.
+The latest Windows release is **0.3.6**.
 
-[**Download Windows installer — 0.3.5**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/iPhoneIPAManager-0.3.5-setup-x64.exe)
+[**Download Windows installer — 0.3.6**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.6-preview/iPhoneIPAManager-0.3.6-setup-x64.exe)
 
-[Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/iPhoneIPAManager-0.3.5-windows-x64.zip)
+[Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.6-preview/iPhoneIPAManager-0.3.6-windows-x64.zip)
 
-[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.3.5-preview)
-· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/iPhoneIPAManager-0.3.5-source.zip)
-· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/SHA256SUMS.txt)
+[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.3.6-preview)
+· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.6-preview/iPhoneIPAManager-0.3.6-source.zip)
+· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.6-preview/SHA256SUMS.txt)
 
 Run the setup EXE, or extract the portable ZIP and run `iPhoneIPAManager.exe`. Python is not required. The setup is per-user and does not request elevation.
 
-[Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
+[Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.6-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
 
-**Release status: 0.3.5 preview.** This update fixes connection authentication,
-Discord status/settings, IPA assignment and renewal consistency, cancellation,
-temporary-file cleanup and update recovery. Windows packaged checks and paired
-iPhone installation/profile-refresh tests passed. See
+**Release status: 0.3.6 preview.** This update keeps IPA preparation responsive,
+improves cancellation, serializes renewal-setting changes and strengthens archive
+validation, tunnel cleanup and update recovery. Automated, Windows packaged and
+paired iPhone installation/profile-refresh tests passed. See
 [release validation](docs/VALIDATION.md) for the recorded test scope.
 
 ## Start here

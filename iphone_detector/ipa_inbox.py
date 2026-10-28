@@ -32,6 +32,7 @@ def validate_ipa(path, *, stop=None):
                 normalized = name.replace("\\", "/")
                 if (
                     normalized.startswith("/")
+                    or any(part in ("", ".") for part in normalized.removesuffix("/").split("/"))
                     or ".." in normalized.split("/")
                     or ":" in normalized
                     or "\\" in name
@@ -103,11 +104,18 @@ def validate_ipa(path, *, stop=None):
             }
     except Cancelled:
         raise
-    except (zipfile.BadZipFile, RuntimeError, EOFError) as exc:
+    except (zipfile.BadZipFile, RuntimeError, EOFError, NotImplementedError) as exc:
         raise ValueError("The IPA is damaged or incomplete.") from exc
 
 
 def import_ipa(source, directory, *, cancelled=None, progress=None):
+    class ImportStop:
+        def check(self):
+            if cancelled is not None and cancelled.is_set():
+                raise Cancelled("IPA import cancelled.")
+
+    stop = ImportStop()
+    stop.check()
     source, directory = Path(source), Path(directory)
     if source.suffix.lower() != ".ipa" or not source.is_file():
         raise ValueError("Choose a completed .ipa download.")
@@ -120,8 +128,7 @@ def import_ipa(source, directory, *, cancelled=None, progress=None):
             with source.open("rb") as incoming:
                 copied = 0
                 while chunk := incoming.read(4 * 1024 * 1024):
-                    if cancelled is not None and cancelled.is_set():
-                        raise RuntimeError("IPA import cancelled.")
+                    stop.check()
                     handle.write(chunk)
                     copied += len(chunk)
                     if progress is not None:
@@ -129,11 +136,9 @@ def import_ipa(source, directory, *, cancelled=None, progress=None):
         after = source.stat()
         if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
             raise ValueError("The file is still being received. Wait for the transfer to finish.")
-        if cancelled is not None and cancelled.is_set():
-            raise RuntimeError("IPA import cancelled.")
-        validate_ipa(temporary)
-        if cancelled is not None and cancelled.is_set():
-            raise RuntimeError("IPA import cancelled.")
+        stop.check()
+        validate_ipa(temporary, stop=stop)
+        stop.check()
         # Unique names prevent overwriting an IPA used by another account/job.
         destination = directory / (source.stem[:180] + "-" + uuid.uuid4().hex[:12] + ".ipa")
         # Windows rename refuses an existing destination; replace would silently

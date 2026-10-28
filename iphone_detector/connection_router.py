@@ -80,7 +80,7 @@ def run_refresh(job, stop):
     from iphone_detector.config import load_config
 
     config = load_config() or {}
-    request = make_job(config, "Remote")
+    request = make_job(config, "Remote", stop=stop)
     usb = find_usb(request["serial"])
     local = None if usb else find_local(request["serial"], remote_tunnel.settings(), stop)
     transport = "usb" if usb else "local-wifi"
@@ -408,7 +408,7 @@ def run_local_tunnel(job, stop, address, accounts=None, refresh=False):
     from pymobiledevice3.exceptions import PyMobileDevice3Exception
 
     config = remote_tunnel.settings()
-    request = make_job(load_config() or {}, "Remote", accounts=accounts)
+    request = make_job(load_config() or {}, "Remote", accounts=accounts, stop=stop)
     if canonical_serial(config.get("serial", "")) != canonical_serial(request["serial"]):
         raise RuntimeError("Local tunnel configuration refers to a different phone.")
     if not on_link(address, local_networks()):

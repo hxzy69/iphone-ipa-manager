@@ -187,6 +187,69 @@ class WorkflowUpgradeTests(unittest.TestCase):
         self.assertEqual(job_queue.entries()[0]["state"], "running")
         self.assertNotIn("waiting_reason", job_queue.entries()[0])
 
+    def test_offline_queue_does_not_rehash_ipa_files(self):
+        from iphone_detector.input_integrity import identity
+
+        entry = job_queue.enqueue(accounts=[0])
+        with (
+            patch("iphone_detector.connection_router.route_ready", return_value=False),
+            patch("iphone_detector.remote_tunnel.ensure_started"),
+            patch("iphone_detector.input_integrity.identity", wraps=identity) as identities,
+            patch.object(job_queue.subprocess, "Popen") as spawn,
+        ):
+            self.assertTrue(job_queue.step())
+            self.assertTrue(job_queue.step())
+        self.assertEqual(identities.call_count, 2)
+        self.assertTrue(all(call.kwargs["digest"] is False for call in identities.call_args_list))
+        spawn.assert_not_called()
+        self.assertEqual(job_queue.entries()[0]["id"], entry["id"])
+        self.assertEqual(job_queue.entries()[0]["state"], "queued")
+
+    def test_missing_file_pauses_queue_even_when_phone_is_offline(self):
+        entry = job_queue.enqueue(accounts=[0])
+        Path(entry["selection"]["accounts"][0]["ipa"]).unlink()
+        with (
+            patch("iphone_detector.connection_router.route_ready", return_value=False),
+            patch("iphone_detector.remote_tunnel.ensure_started"),
+            patch.object(job_queue.subprocess, "Popen") as spawn,
+        ):
+            self.assertFalse(job_queue.step())
+        spawn.assert_not_called()
+        self.assertEqual(job_queue.entries()[0]["failure_code"], "selection-changed")
+
+    def test_busy_installation_defers_queue_hashing_and_dispatch(self):
+        from iphone_detector.run_lock import RunLock
+
+        job_queue.enqueue(accounts=[0])
+        active = RunLock()
+        try:
+            self.assertTrue(active.acquire())
+            with (
+                patch("iphone_detector.background.make_job") as prepare,
+                patch.object(job_queue.subprocess, "Popen") as spawn,
+            ):
+                self.assertTrue(job_queue.step())
+            prepare.assert_not_called()
+            spawn.assert_not_called()
+            self.assertEqual(job_queue.entries()[0]["state"], "queued")
+        finally:
+            active.close()
+
+    def test_request_can_be_cancelled_during_content_hashing_without_dispatch(self):
+        entry = job_queue.enqueue(accounts=[0])
+
+        def hashing(*args, **kwargs):
+            job_queue.change(entry["id"], "cancel")
+            return entry["selection"]
+
+        with (
+            patch("iphone_detector.background.make_job", side_effect=hashing),
+            patch.object(job_queue.subprocess, "Popen") as spawn,
+        ):
+            self.assertFalse(job_queue.step())
+        spawn.assert_not_called()
+        self.assertEqual(job_queue.entries()[0]["state"], "cancelled")
+
     def test_corrupt_queue_is_preserved_and_blocks_dispatch(self):
         job_queue.ROOT.mkdir()
         path = job_queue.ROOT / "broken.json"

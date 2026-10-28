@@ -78,3 +78,32 @@ class RemoteCheckTests(unittest.TestCase):
                     "100.64.0.10", "phone", {"HostID": "host", "SystemBUID": "buid"}
                 )
             self.assertEqual(request.call_count, 1)
+
+    def test_unencrypted_service_is_rejected_before_opening_its_port(self):
+        secure = Mock()
+        with (
+            patch.object(remote.socket, "create_connection", return_value=MagicMock()) as connect,
+            patch.object(remote, "tls_context"),
+            patch.object(remote, "pinned", return_value=secure),
+            patch.object(
+                remote,
+                "lockdown",
+                side_effect=[
+                    {"EnableSessionSSL": True},
+                    {"Value": "phone"},
+                    {"Port": 12345, "EnableServiceSSL": False},
+                ],
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "authenticated TLS"):
+                remote.authenticate_direct(
+                    "100.64.0.10", "phone", {"HostID": "host", "SystemBUID": "buid"}
+                )
+        connect.assert_called_once()
+        secure.close.assert_called_once()
+
+    def test_invalid_saved_certificate_is_rejected_before_transferring_socket_ownership(self):
+        context = Mock()
+        with self.assertRaises(ValueError):
+            remote.pinned(context, Mock(), {"DeviceCertificate": b"invalid"})
+        context.wrap_socket.assert_not_called()

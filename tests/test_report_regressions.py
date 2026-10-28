@@ -99,7 +99,17 @@ class ReportRegressionTests(unittest.TestCase):
             "id": "one",
             "state": "queued",
             "mode": "refresh",
-            "selection": {"accounts": [], "serial": "phone"},
+            "selection": {
+                "serial": "phone",
+                "accounts": [
+                    {
+                        "account": 1,
+                        "email": "fixture@example.com",
+                        "ipa": "Fixture.ipa",
+                        "file_identity": {"size": 1, "mtime_ns": 1, "sha256": "0" * 64},
+                    }
+                ],
+            },
         }
 
         @contextmanager

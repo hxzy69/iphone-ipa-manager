@@ -12,6 +12,51 @@ from iphone_detector import remote_tunnel as remote
 
 
 class RemoteTunnelTests(unittest.TestCase):
+    def test_ipa_hashing_keeps_event_loop_responsive_and_stops_before_signing(self):
+        import threading
+
+        async def exercise(job):
+            event_loop_thread = threading.get_ident()
+            entered = threading.Event()
+            finished = threading.Event()
+
+            def hashing(*args, stop=None, **kwargs):
+                self.assertNotEqual(threading.get_ident(), event_loop_thread)
+                entered.set()
+                try:
+                    self.assertTrue(stop.cancelled.wait(3), "Hashing was not cancelled")
+                    stop.check()
+                finally:
+                    finished.set()
+
+            with (
+                patch(
+                    "iphone_detector.config.load_config",
+                    return_value={"device": {"serial": "phone"}},
+                ),
+                patch("iphone_detector.background.make_job", side_effect=hashing),
+                patch("iphone_detector.background.run_background") as native,
+            ):
+                worker = asyncio.create_task(remote.execute_job(job, Mock(udid="phone")))
+                for _ in range(100):
+                    if entered.is_set() or worker.done():
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertTrue(entered.is_set(), "Preparation blocked the tunnel event loop")
+                (job / "stop").touch()
+                await asyncio.wait_for(worker, 4)
+                self.assertTrue(finished.is_set())
+                native.assert_not_called()
+
+        with tempfile.TemporaryDirectory() as directory:
+            job = Path(directory)
+            remote.atomic(job / "remote-request.json", {"accounts": [1]})
+            (job / "remote-heartbeat").touch()
+            asyncio.run(exercise(job))
+            result = json.loads((job / "remote-result.json").read_text())
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["completed_accounts"], 0)
+
     def test_final_result_storage_failure_retains_claim_and_does_not_raise(self):
         with (
             tempfile.TemporaryDirectory() as directory,

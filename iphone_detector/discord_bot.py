@@ -167,11 +167,12 @@ class Controller:
         ):
             raise RuntimeError("An installation is already running.")
         from iphone_detector.bridge_service import installed
-        from iphone_detector.background import make_job, selected_accounts
+        from iphone_detector.background import BackgroundStop, make_job, selected_accounts
         from iphone_detector.config import load_config
         from iphone_detector.settings import get_workflow
         from iphone_detector import remote_tunnel
 
+        preparation_stop = BackgroundStop(self._cancel_start)
         original_request = None
         if expected_assignment is not None:
             original_config = load_config() or {}
@@ -185,7 +186,9 @@ class Controller:
             current = original_workflow[accounts[0]]
             if any(current[key] != expected_assignment.get(key) for key in ("email", "ipa")):
                 raise ValueError("The confirmed assignment changed. Open /inbox or /assign again.")
-            original_request = make_job(original_config, "Network", accounts=accounts)
+            original_request = make_job(
+                original_config, "Network", accounts=accounts, stop=preparation_stop
+            )
 
         if refresh:
             from iphone_detector.connection_router import route_ready
@@ -210,7 +213,7 @@ class Controller:
                 )
         config = load_config() or {}
         chosen = selected_accounts(get_workflow(config), accounts)
-        request = make_job(config, "Network", accounts=accounts)
+        request = make_job(config, "Network", accounts=accounts, stop=preparation_stop)
         from iphone_detector.operations import selection_matches
 
         if original_request is not None and not selection_matches(original_request, request):
@@ -351,22 +354,28 @@ def run():
     singleton.name = "Local\\iPhoneIPAManagerDiscord"
     if not singleton.acquire():
         raise RuntimeError("The Discord listener is already running.")
-    setup_logging(log_file=str(DATA_ROOT / "discord.log"))
-    LOG.info("Discord listener starting; waiting for network if necessary.")
-    from iphone_detector import remote_tunnel
-
     try:
-        remote_tunnel.ensure_started()
-    except Exception:
-        LOG.exception("Tunnel startup failed; keeping Discord controls available for diagnosis.")
-    settings, token = load_settings()
-    from iphone_detector.activation_health import ready
+        setup_logging(log_file=str(DATA_ROOT / "discord.log"))
+        LOG.info("Discord listener starting; waiting for network if necessary.")
+        from iphone_detector import remote_tunnel
 
-    ready("discord")
-    controller = Controller()
-    stop_file = DATA_ROOT / "discord-stop"
-    stop_file.unlink(missing_ok=True)
-    guild = discord.Object(id=settings["guild_id"])
+        try:
+            remote_tunnel.ensure_started()
+        except Exception:
+            LOG.exception(
+                "Tunnel startup failed; keeping Discord controls available for diagnosis."
+            )
+        settings, token = load_settings()
+        controller = Controller()
+        stop_file = DATA_ROOT / "discord-stop"
+        stop_file.unlink(missing_ok=True)
+        guild = discord.Object(id=settings["guild_id"])
+        from iphone_detector.activation_health import ready
+
+        ready("discord")
+    except BaseException:
+        singleton.close()
+        raise
 
     class Bot(discord.Client):
         async def on_ready(self):

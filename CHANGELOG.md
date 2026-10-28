@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.6 — responsive preparation and reliable recovery — 2026-10-28
+
+- Keep queued-request controls available while IPA content is checked, and defer
+  full hashing until the phone is reachable instead of repeating it while offline.
+- Serialize renewal-setting saves across controllers to prevent overlapping
+  Windows task and preference changes.
+- Keep the userspace tunnel event loop responsive during IPA hashing; cancel
+  preparation and join its thread before finalizing a cancelled remote request.
+- Monitor worker cancellation before selection validation and propagate stop
+  requests through controller, routing and backend input hashing.
+- Preserve lightweight offline assignment checks in the queue and stop/join
+  packaged test children on recovery-check timeouts.
+- Cancel IPA imports during archive validation and remove their partial copies.
+- Reject archive paths containing redundant separators or dot components before
+  importing an IPA or extracting a downloaded release.
+- Release Discord and tunnel singleton locks when startup validation fails, so
+  corrected settings can be retried in the same process.
+- Report Windows scheduler failures while saving renewal settings without leaving
+  the renewal dialog disabled or overwriting saved preferences.
+- Close every discovered RemotePairing connection even when saving a listener
+  fails or another connection cannot be closed.
+- Start and acknowledge the update's tunnel before launching controllers that
+  can also start it. Wait for replacement shutdown before rolling back, including
+  exited children and forced termination; pause for repair if shutdown is uncertain.
+- Require paired TLS for the read-only installation-service diagnostic as well
+  as execution, and validate saved certificates before wrapping sockets.
+- Add regression tests for cancellation, archive aliases, startup failures,
+  connection cleanup and update handover/rollback.
+
 ## 0.3.5 — verified connection and workflow fixes — 2026-10-28
 
 - Acknowledge Discord /status before reading renewal or worker state, move those

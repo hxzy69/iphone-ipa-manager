@@ -1,6 +1,7 @@
 """One-time trusted RemotePairing setup for the optional Tailscale transport."""
 
 import asyncio
+from contextlib import AsyncExitStack
 import ipaddress
 import json
 import os
@@ -88,12 +89,11 @@ async def provision(serial, phone_ip, lan_ip=None):
     remote_identifier = pairing_identifier(remote_identifier)
     from iphone_detector.remote_discovery import discover
 
-    services = await discover(remote_identifier, {"ip": phone_ip})
-    try:
-        ports = sorted({service.port for service in services})
-    finally:
+    async with AsyncExitStack() as services_stack:
+        services = await discover(remote_identifier, {"ip": phone_ip})
         for service in services:
-            await service.close()
+            services_stack.push_async_callback(service.close)
+        ports = sorted({service.port for service in services})
     for port in ports:
         try:
             remote = await asyncio.wait_for(

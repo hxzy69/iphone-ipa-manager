@@ -1,5 +1,29 @@
 # Public preview validation
 
+## 0.3.6 — 2026-10-28
+
+The reviewed application passes 519 isolated tests, lint/format checks, source
+privacy validation and dependency policy checks. The standalone Windows package
+passes 19 self-tests, runtime isolation, seven failure/recovery scenarios, six
+installer/repair/uninstall checks and embedded-source verification.
+
+Live acceptance covered a three-account profile refresh over authenticated local
+Wi-Fi in 67 seconds, with three profile readbacks and no reinstalls, plus a full
+account 2 installation in 161 seconds with a verified installation receipt. Early
+cancellation returned before native dispatch. Neither completed device run left
+temporary input directories or cleanup warnings.
+
+Normal-user scheduled startup passed for the queue, tunnel and renewal components.
+An isolated real update activation closed its parent GUI, verified replacement
+GUI/tunnel acknowledgements and preserved production task definitions. Repeated
+packaged overdue/offline and interrupted-renewal checks waited or paused without
+replaying device work. The candidate tunnel retained its connection and live IPC
+status during an exclusive status-file lock, then recovered its persisted status
+and stopped cleanly. Temporary QA tasks and processes were removed.
+
+Dependency policy exceptions retain their documented scope and expiry in
+`third_party/security-exceptions.json` and the packaged audit report.
+
 ## 0.3.5 — 2026-10-28
 
 The reviewed source passes 497 isolated Python tests, native backend/dependency

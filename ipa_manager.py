@@ -77,18 +77,6 @@ def worker(mode, job, parent_pid=None, accounts=None):
             json.dumps({"error": "Another installation or connection check is already running."})
         )
         return 1
-    if remote:
-        try:
-            from iphone_detector.background import validate_selection
-
-            validate_selection(job, load_config() or {}, accounts)
-        except (OSError, ValueError, TypeError) as exc:
-            from iphone_detector.storage import write_json
-
-            write_json(job / "result.json", {"error": str(exc)})
-            if lock is not None:
-                lock.close()
-            return 1
     parent = None
     if parent_pid:
         from iphone_detector.wifi import process_handle
@@ -105,8 +93,6 @@ def worker(mode, job, parent_pid=None, accounts=None):
             ):
                 stopped.set()
                 return
-
-    threading.Thread(target=monitor, daemon=True, name="stop-request").start()
 
     completed_data = None
 
@@ -143,6 +129,11 @@ def worker(mode, job, parent_pid=None, accounts=None):
         from iphone_detector.worker_registry import register
 
         register(job, mode, accounts)
+        threading.Thread(target=monitor, daemon=True, name="stop-request").start()
+        if remote:
+            from iphone_detector.background import BackgroundStop, validate_selection
+
+            validate_selection(job, load_config() or {}, accounts, stop=BackgroundStop(stopped))
         log.info("Starting %s", mode)
         if tunnel_run:
             from iphone_detector.background import BackgroundStop

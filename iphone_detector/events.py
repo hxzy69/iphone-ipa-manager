@@ -4,8 +4,8 @@ The detection code never calls feature code directly. Instead it emits
 ``connect`` / ``disconnect`` events, and any feature can subscribe:
 
     dispatcher = EventDispatcher()
-    dispatcher.on("connect", log_connect)          # basic logging (now)
-    dispatcher.on("connect", run_ocr_pipeline)     # OCR automation (later)
+    dispatcher.on("connect", log_connect)
+    dispatcher.on("connect", handle_connection)
 
 A failing handler is logged but never kills the watcher loop.
 """

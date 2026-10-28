@@ -235,6 +235,8 @@ def step():
             candidate = next((item for item in snapshot if item["state"] == "queued"), None)
     candidate_id = candidate["id"] if candidate else None
     ready = False
+    selection_error = None
+    selection_busy = False
     if candidate:
         from iphone_detector.connection_router import route_ready
 
@@ -247,6 +249,24 @@ def step():
                 remote_tunnel.ensure_started()
             except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
                 LOG.exception("Could not start the remote tunnel; request remains waiting.")
+        if ready:
+            availability = RunLock()
+            try:
+                selection_busy = not availability.acquire()
+            finally:
+                availability.close()
+        if not selection_busy:
+            try:
+                from iphone_detector.operations import selection_matches
+
+                chosen = [item["account"] - 1 for item in candidate["selection"]["accounts"]]
+                request = make_job(
+                    load_config() or {}, "Network", accounts=chosen, verify_content=ready
+                )
+                if not selection_matches(candidate["selection"], request, content=ready):
+                    raise ValueError("The account, phone or IPA changed after queuing.")
+            except (OSError, ValueError) as exc:
+                selection_error = exc
 
     with guard():
         values = entries()
@@ -298,6 +318,8 @@ def step():
             or entry["selection"] != candidate["selection"]
         ):
             return True
+        if selection_busy:
+            return True
         lock = RunLock()
         try:
             if not lock.acquire():
@@ -307,11 +329,8 @@ def step():
         chosen = [item["account"] - 1 for item in entry["selection"]["accounts"]]
         failure_code = "selection-changed"
         try:
-            request = make_job(load_config() or {}, "Network", accounts=chosen)
-            if any(
-                request.get(key) != entry["selection"].get(key) for key in ("serial", "accounts")
-            ):
-                raise ValueError("The account, phone or IPA changed after queuing.")
+            if selection_error is not None:
+                raise selection_error
             if not ready:
                 if entry.get("waiting_reason") != "connection":
                     entry["waiting_reason"] = "connection"

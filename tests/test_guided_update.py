@@ -267,6 +267,35 @@ class GuidedUpdateTests(unittest.TestCase):
         launch.assert_not_called()
         self.assertFalse((self.root / "remote-stop").exists())
 
+    def test_unverified_replacement_shutdown_blocks_restarting_old_components(self):
+        failure = update.ReplacementCleanupError("replacement still running")
+        code, _, _, tasks, launch, _ = self.activation(launch_failure=failure)
+        self.assertEqual(code, 1)
+        self.assertEqual(launch.call_count, 1)
+        self.assertEqual(tasks.call_count, 1)
+        self.assertEqual(json.loads(update.STATE.read_text())["phase"], "repair")
+
+    def test_exited_child_does_not_skip_parent_shutdown_and_releases_before_return(self):
+        process = Mock(pid=123, poll=lambda: None)
+        exited = Mock()
+        exited.terminate.side_effect = update.psutil.NoSuchProcess(456)
+        with patch.object(
+            update.psutil, "Process", return_value=Mock(children=lambda recursive: [exited])
+        ):
+            update.stop_replacements([process])
+        process.terminate.assert_called_once()
+        process.wait.assert_called_once_with(timeout=10)
+
+    def test_stuck_replacement_is_killed_and_waited_before_rollback(self):
+        process = Mock(pid=123, poll=lambda: None)
+        process.wait.side_effect = [update.subprocess.TimeoutExpired("fixture", 10), 0]
+        with patch.object(
+            update.psutil, "Process", return_value=Mock(children=lambda recursive: [])
+        ):
+            update.stop_replacements([process])
+        process.kill.assert_called_once()
+        self.assertEqual(process.wait.call_args.kwargs, {"timeout": 5})
+
     def test_retarget_preserves_periodic_triggers_and_arguments(self):
         from iphone_detector.startup_task import retarget
 
@@ -331,7 +360,9 @@ class GuidedUpdateTests(unittest.TestCase):
         ):
             with self.assertRaises(OSError):
                 update.launch(
-                    self.root / "new.exe", {"discord": True, "remote": True, "queue": False}
+                    self.root / "new.exe",
+                    {"discord": True, "remote": True, "queue": False},
+                    require_ack=False,
                 )
         child.terminate.assert_called_once()
         process.terminate.assert_called_once()

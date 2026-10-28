@@ -92,8 +92,8 @@ def tls_context(pair):
 
 
 def pinned(context, stream, pair):
-    secure = context.wrap_socket(stream)
     expected = ssl.PEM_cert_to_DER_cert(pair["DeviceCertificate"].decode())
+    secure = context.wrap_socket(stream)
     if secure.getpeercert(binary_form=True) != expected:
         secure.close()
         raise RuntimeError("Remote device certificate does not match the paired iPhone.")
@@ -125,12 +125,10 @@ def authenticate_direct(ip, serial, pair, stage=lambda _: None):
             port = service["Port"]
             if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
                 raise RuntimeError("Device returned an invalid installation-service port.")
+            if service.get("EnableServiceSSL") is not True:
+                raise RuntimeError("Installation service did not enable authenticated TLS.")
             with socket.create_connection((ip, port), timeout=8) as service_raw:
-                service_stream = (
-                    pinned(context, service_raw, pair)
-                    if service.get("EnableServiceSSL")
-                    else service_raw
-                )
+                service_stream = pinned(context, service_raw, pair)
                 try:
                     stage("read_only_lookup")
                     payload = plistlib.dumps(

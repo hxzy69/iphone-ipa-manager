@@ -25,6 +25,40 @@ PREVIOUS = DATA_ROOT / "previous-version.json"
 LOG = logging.getLogger("iphone-detector.update")
 
 
+class ReplacementCleanupError(ValueError):
+    """Starting the previous runtime is unsafe until its replacement has stopped."""
+
+
+def stop_replacements(processes):
+    failures = False
+    for process in processes:
+        if process.poll() is not None:
+            continue
+        try:
+            children = psutil.Process(process.pid).children(recursive=True)
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.Error:
+            children = []
+            failures = True
+        for target in [*reversed(children), process]:
+            try:
+                target.terminate()
+                try:
+                    target.wait(timeout=10)
+                except subprocess.TimeoutExpired, psutil.TimeoutExpired:
+                    target.kill()
+                    target.wait(timeout=5)
+            except ProcessLookupError, psutil.NoSuchProcess:
+                continue  # A child can finish between discovery and termination.
+            except OSError, psutil.Error, subprocess.TimeoutExpired:
+                failures = True
+    if failures:
+        raise ReplacementCleanupError(
+            "Replacement shutdown could not be verified. Close its components locally before repairing startup."
+        )
+
+
 def download(url, destination, limit):
     started = time.monotonic()
     request = Request(url, headers={"User-Agent": "iPhoneIPAManager-Updater"})
@@ -179,8 +213,8 @@ def launch(executable, preferences, gui=True, *, require_ack=True):
     modes = [
         args
         for args in (
-            ["--discord"] if preferences["discord"] else [],
             ["--remote-daemon"] if preferences["remote"] else [],
+            ["--discord"] if preferences["discord"] else [],
             ["--queue-runner"] if preferences["queue"] else [],
         )
         if args
@@ -190,21 +224,9 @@ def launch(executable, preferences, gui=True, *, require_ack=True):
     started = []
     nonce = uuid.uuid4().hex
     components = {"--discord": "discord", "--remote-daemon": "remote", "--queue-runner": "queue"}
-    try:
-        for args in modes:
-            started.append(
-                subprocess.Popen(
-                    base + args,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    env=dict(
-                        os.environ,
-                        PYINSTALLER_RESET_ENVIRONMENT="1",
-                        IPA_MANAGER_ACTIVATION_NONCE=nonce,
-                    ),
-                )
-            )
-        deadline = time.monotonic() + (45 if require_ack else 5)
-        waiting = list(zip(started, modes))
+    deadline = time.monotonic() + (45 if require_ack else 5)
+
+    def wait_for_startup(waiting):
         while waiting:
             for process, args in waiting[:]:
                 component = components.get(args[0], "gui") if args else "gui"
@@ -237,16 +259,30 @@ def launch(executable, preferences, gui=True, *, require_ack=True):
                     break
                 raise ValueError("Replacement startup was not acknowledged. Rolling back.")
             time.sleep(0.2)
+
+    try:
+        waiting = []
+        for args in modes:
+            process = subprocess.Popen(
+                base + args,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=dict(
+                    os.environ,
+                    PYINSTALLER_RESET_ENVIRONMENT="1",
+                    IPA_MANAGER_ACTIVATION_NONCE=nonce,
+                ),
+            )
+            started.append(process)
+            waiting.append((process, args))
+            if require_ack and args == ["--remote-daemon"]:
+                # Discord and the GUI can start the scheduled tunnel themselves.
+                # Establish ownership here before launching those controllers,
+                # otherwise a competing daemon can take the singleton and fail
+                # this handover's process-identity acknowledgement.
+                wait_for_startup(waiting)
+        wait_for_startup(waiting)
     except OSError, ValueError, TypeError, KeyError, psutil.Error:
-        for process in started:
-            try:
-                if process.poll() is None:
-                    children = psutil.Process(process.pid).children(recursive=True)
-                    for child in reversed(children):
-                        child.terminate()
-                    process.terminate()
-            except OSError, psutil.Error:
-                pass
+        stop_replacements(started)
         raise
     return started
 
@@ -366,18 +402,12 @@ def activate(plan_path, parent_pid):
         write_json(STATE, {"phase": "complete", "at": time.time(), "executable": str(executable)})
         return 0
     except Exception as exc:
+        if isinstance(exc, ReplacementCleanupError):
+            write_json(STATE, {"phase": "repair", "at": time.time(), "message": str(exc)})
+            return 1
         if preferences is not None:
             try:
-                for process in replacement_processes:
-                    if process.poll() is None:
-                        owned = psutil.Process(process.pid)
-                        children = owned.children(recursive=True)
-                        for child in reversed(children):
-                            child.terminate()
-                        process.terminate()
-                        process.wait(timeout=10)
-                        for child in children:
-                            child.wait(timeout=10)
+                stop_replacements(replacement_processes)
                 if managed is not None:
                     desktop_install.restore_installation(*managed)
                 configure_tasks(executable, old)

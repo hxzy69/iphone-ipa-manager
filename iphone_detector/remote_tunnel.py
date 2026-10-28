@@ -112,7 +112,7 @@ def submit(job, stop, accounts=None):
         raise ValueError("Remote jobs must be created in the application automation-runs folder.")
     if state()["state"] != "ready":
         raise RuntimeError(describe())
-    request = make_job(load_config() or {}, "Remote", accounts=accounts)
+    request = make_job(load_config() or {}, "Remote", accounts=accounts, stop=stop)
     selected = [entry["account"] for entry in request.get("accounts", [])]
     offline_since = None
     deadline = time.monotonic() + 60 + 2 * request["timeout"] * len(selected)
@@ -330,8 +330,36 @@ def job_accounts(job):
     return sorted(numbers)
 
 
+async def prepare_request(job, config, numbers, stopped):
+    """Keep userspace tunnel traffic alive while hashing local IPA files."""
+    from iphone_detector.background import BackgroundStop, make_job
+
+    stop = BackgroundStop(stopped)
+    preparation = asyncio.create_task(
+        asyncio.to_thread(
+            make_job,
+            config,
+            "Remote",
+            accounts=[number - 1 for number in numbers],
+            stop=stop,
+        )
+    )
+    try:
+        while not preparation.done():
+            if cancelled(job):
+                stopped.set()
+            await asyncio.sleep(0.1)
+        request = await preparation
+        stop.check()
+        return request
+    finally:
+        if not preparation.done():
+            stopped.set()
+        await asyncio.gather(preparation, return_exceptions=True)
+
+
 async def execute_job(job, rsd):
-    from iphone_detector.background import BackgroundStop, make_job, run_background
+    from iphone_detector.background import BackgroundStop, run_background
     from iphone_detector.config import load_config
 
     stopped = threading.Event()
@@ -356,9 +384,7 @@ async def execute_job(job, rsd):
         if canonical_serial(rsd.udid) != canonical_serial(expected):
             raise RuntimeError("Tunnel identity does not match the configured iPhone.")
         numbers = job_accounts(job)
-        request = make_job(
-            load_config() or {}, "Remote", accounts=[number - 1 for number in numbers]
-        )
+        request = await prepare_request(job, load_config() or {}, numbers, stopped)
         selection = job / "selection.json"
         if selection.exists():
             from iphone_detector.operations import selection_matches
@@ -668,11 +694,7 @@ async def daemon(status_channel=None):
     lock.name = profile_lock_name("RemoteTunnel")
     if not lock.acquire():
         return
-    (DATA_ROOT / "remote-stop").unlink(missing_ok=True)
     from iphone_detector.activation_health import ready
-
-    settings()  # Reject unreadable configuration before acknowledging startup.
-    ready("remote")
 
     def publish(value):
         if status_channel is not None:
@@ -684,6 +706,9 @@ async def daemon(status_channel=None):
             LOG.warning("Could not update tunnel status; keeping the connection open.")
 
     try:
+        (DATA_ROOT / "remote-stop").unlink(missing_ok=True)
+        settings()  # Reject unreadable configuration before acknowledging startup.
+        ready("remote")
         while enabled() and not (DATA_ROOT / "remote-stop").exists():
             publish("connecting")
             try:
@@ -698,15 +723,17 @@ async def daemon(status_channel=None):
                     from iphone_detector.remote_discovery import discover
 
                     current = settings()
-                    listeners = await discover(current["serial"], current)
-                    for listener in listeners:
-                        if canonical_serial(listener.remote_identifier) == canonical_serial(
-                            current["serial"]
-                        ):
-                            current["port"] = listener.port
-                            current["serial"] = listener.remote_identifier
-                            atomic(SETTINGS, current)
-                        await listener.close()
+                    async with AsyncExitStack() as listeners_stack:
+                        listeners = await discover(current["serial"], current)
+                        for listener in listeners:
+                            listeners_stack.push_async_callback(listener.close)
+                        for listener in listeners:
+                            if canonical_serial(listener.remote_identifier) == canonical_serial(
+                                current["serial"]
+                            ):
+                                current["port"] = listener.port
+                                current["serial"] = listener.remote_identifier
+                                atomic(SETTINGS, current)
                 except Exception:
                     pass
                 for _ in range(15):

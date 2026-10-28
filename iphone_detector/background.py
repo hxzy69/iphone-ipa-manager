@@ -80,7 +80,9 @@ def resolve_server(config):
     return https_server(server)
 
 
-def make_job(config, transport, check_only=False, accounts=None, *, verify_content=True):
+def make_job(config, transport, check_only=False, accounts=None, *, verify_content=True, stop=None):
+    if stop is not None:
+        stop.check()
     serial = config.get("device", {}).get("serial")
     if not serial:
         raise ValueError("Pair your iPhone by USB first.")
@@ -89,6 +91,8 @@ def make_job(config, transport, check_only=False, accounts=None, *, verify_conte
     workflow = get_workflow(config)
     entries = []
     for index in selected_accounts(workflow, accounts):
+        if stop is not None:
+            stop.check()
         ipa = folder / (workflow[index]["ipa"] + ".ipa")
         if not ipa.is_file():
             raise ValueError("IPA file not found: " + str(ipa))
@@ -100,7 +104,9 @@ def make_job(config, transport, check_only=False, accounts=None, *, verify_conte
                 "email": workflow[index]["email"],
                 "ipa": str(ipa),
                 "account": index + 1,
-                "file_identity": identity(ipa, digest=verify_content),
+                "file_identity": identity(
+                    ipa, digest=verify_content, **({"stop": stop} if stop is not None else {})
+                ),
             }
         )
     server = resolve_server(config)
@@ -116,13 +122,13 @@ def make_job(config, transport, check_only=False, accounts=None, *, verify_conte
     }
 
 
-def validate_selection(job, config, accounts=None):
+def validate_selection(job, config, accounts=None, *, stop=None):
     """A Discord request must not install a different assignment after worker startup."""
     path = job / "selection.json"
     if not path.exists():
         return
     selected = json.loads(path.read_text(encoding="utf-8"))
-    current = make_job(config, "Network", accounts=accounts)
+    current = make_job(config, "Network", accounts=accounts, stop=stop)
     from iphone_detector.operations import selection_matches
 
     if not selection_matches(selected, current):
@@ -140,7 +146,7 @@ def run_background(
     request = (
         request_override
         if request_override is not None
-        else make_job(config, transport, check_only, accounts)
+        else make_job(config, transport, check_only, accounts, stop=stop)
     )
     binary = ASSET_ROOT / "tools/optimized-iloader/iloader-wifi.exe"
     if not binary.is_file():

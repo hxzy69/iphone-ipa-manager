@@ -42,6 +42,7 @@ def verify_members(archive):
         path = PurePosixPath(name)
         if (
             path.is_absolute()
+            or any(part in ("", ".") for part in name.removesuffix("/").split("/"))
             or ".." in path.parts
             or "\\" in name
             or ":" in name

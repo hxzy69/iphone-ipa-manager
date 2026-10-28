@@ -12,6 +12,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
+import psutil
 
 
 def write(path, value):
@@ -20,13 +21,29 @@ def write(path, value):
 
 
 def run(executable, root, *arguments):
-    result = subprocess.run(
+    process = subprocess.Popen(
         [str(executable), "--data-dir", str(root), *arguments],
-        timeout=60,
         creationflags=subprocess.CREATE_NO_WINDOW,
         env=dict(os.environ, IPA_MANAGER_DATA_DIR=str(root), PYINSTALLER_RESET_ENVIRONMENT="1"),
     )
-    return result.returncode
+    try:
+        return process.wait(timeout=60)
+    except subprocess.TimeoutExpired:
+        try:
+            children = psutil.Process(process.pid).children(recursive=True)
+        except psutil.NoSuchProcess:
+            children = []
+        for child in reversed(children):
+            try:
+                child.kill()
+            except psutil.NoSuchProcess:
+                pass
+        process.kill()
+        process.wait(timeout=10)
+        _, alive = psutil.wait_procs(children, timeout=10)
+        if alive:
+            raise RuntimeError("Timed-out test children could not be stopped.") from None
+        raise
 
 
 def scenario(root):

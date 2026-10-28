@@ -1,7 +1,6 @@
 # Guided setup, run review and progress
 
-These features are in the source development build. They are not part of the
-published 0.3.6 download yet.
+These workflows are available in the 0.4.0 preview and later releases.
 
 ## Guided setup
 

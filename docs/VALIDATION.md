@@ -1,5 +1,25 @@
 # Public preview validation
 
+## 0.4.0 — 2026-10-28
+
+Verified with 579 isolated automated tests, lint and formatting checks, source
+privacy validation, and 28 packaged runtime checks. Embedded-source comparison
+covers all 70 application modules and the entry point; the unchanged native
+companion matches its verified input. Installer payload and archive checksums are
+verified during release packaging.
+
+Regression coverage includes single-IPA assignment replacement, local version
+suggestions and ambiguity, atomic/concurrent history saves, guarded undo, closed
+GUI workers, review binding to files and account scope, queue preparation races,
+Discord authorization and message limits, and single-use confirmation/cancellation.
+GUI checks cover inert previews and the rendered operation column/file details.
+
+The maintainer has personally tested the existing installation and refresh
+workflows and reports successful operation in their setup. Signing and transport
+code and dependency versions are unchanged in this release. Dependency policy
+exceptions retain their documented scope and expiry in
+`third_party/security-exceptions.json` and the packaged audit report.
+
 ## 0.3.6 — 2026-10-28
 
 The reviewed application passes 519 isolated tests, lint/format checks, source

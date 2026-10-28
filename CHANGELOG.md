@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — app library and guided workflows — 2026-10-28
 
 - Suggest newer numeric IPA versions from the managed folder when the bundle ID
   matches and the newest file is unambiguous. Refresh the open library every

@@ -244,7 +244,12 @@ def create_view(
             self.started = True
             button.disabled = True
             self.stop()
-            await install_account(self.index, interaction)
+            expected = (
+                {"email": self.expected_email, "ipa": self.expected_ipa}
+                if hasattr(self, "expected_ipa")
+                else None
+            )
+            await install_account(self.index, interaction, expected)
 
     class InboxView(discord.ui.View):
         def __init__(self):

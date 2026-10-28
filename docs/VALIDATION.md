@@ -1,5 +1,35 @@
 # Public preview validation
 
+## 0.3.5 — 2026-10-28
+
+The reviewed source passes 497 isolated Python tests, native backend/dependency
+regression tests and the vendored signing library tests. Certificate coverage
+includes real TLS handshakes accepting only the saved phone certificate,
+rejecting plaintext network services and preventing unpaired reconnection after
+authentication failure.
+
+The Windows candidate passed 19 packaged self-tests, isolated runtime checks,
+seven packaged recovery scenarios, installer/repair/uninstall and hidden-task
+migration checks, embedded-source comparison, and archive/checksum verification.
+
+On a paired iPhone, the candidate installed all three assigned apps over
+authenticated local Wi-Fi RemotePairing. Subsequent runs renewed all three
+profiles without reinstalling; profile readbacks were verified. The owner
+confirmed the apps launch normally. The actual scheduled runtime also refreshed
+all three apps and saved a matching renewal date.
+
+Acceptance found a Discord /status response-deadline gap. The command now
+acknowledges immediately and reads status off the gateway event loop; after
+deployment, the owner confirmed its reply and the desktop Overview agree on
+tunnel readiness and the renewal date.
+
+The real registered bot/tunnel tasks started the reviewed executable with normal
+user permissions; the renewal task completed its due check successfully. The
+owner deferred an actual reboot, so fresh Windows sign-in acceptance remains
+pending. No new cellular-roaming or launch-after-old-profile-expiry result is
+claimed for this update. Dependency exceptions remain documented in the
+dependency audit and third_party/security-exceptions.json.
+
 ## 0.3.3 — 2026-10-27
 
 The release workflow built and verified the Windows installer and portable

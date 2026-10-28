@@ -254,7 +254,7 @@ def launch(parent=None, *, preview=False):
             )
             return
         status.set(
-            "Listener launched. Once connected, use /sideload, /status and /stop in the configured channel. Logs: discord.log."
+            "Settings saved. A running listener applies changes after active work finishes; otherwise it connects now. Use /status in the configured channel to verify."
         )
 
     def stop():

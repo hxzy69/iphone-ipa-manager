@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import time
 import re
+import tempfile
 
 from iphone_detector.config import load_config
 from iphone_detector.paths import ASSET_ROOT, DATA_ROOT
@@ -154,10 +155,15 @@ def run_background(
         transport,
     )
     with (
-        snapshot_inputs(job, request) as prepared,
+        snapshot_inputs(job, request, stop) as prepared,
+        tempfile.TemporaryDirectory(prefix="native-temp-", dir=job) as native_temporary,
         (job / "backend.log").open("w", encoding="utf-8") as output,
     ):
         from iphone_detector.storage import write_json
+
+        # Preparation can take a long time. Never dispatch work if cancellation
+        # arrived while inputs were being copied or validated.
+        stop.check()
 
         native_path = job / "native-input.json"
         write_json(native_path, prepared)
@@ -167,6 +173,7 @@ def run_background(
             stdout=output,
             stderr=output,
             creationflags=subprocess.CREATE_NO_WINDOW,
+            env=dict(os.environ, IPA_MANAGER_NATIVE_TEMP=str(native_temporary)),
         )
         offset = 0
         text_offset = 0

@@ -12,6 +12,33 @@ from iphone_detector import remote_tunnel as remote
 
 
 class RemoteTunnelTests(unittest.TestCase):
+    def test_final_result_storage_failure_retains_claim_and_does_not_raise(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch(
+                "iphone_detector.config.load_config", return_value={"device": {"serial": "phone"}}
+            ),
+            patch.object(remote, "atomic", side_effect=PermissionError("locked")),
+        ):
+            job = Path(directory) / "automation-runs" / "failed"
+            job.mkdir(parents=True)
+            asyncio.run(remote.execute_job(job, Mock(udid="wrong-phone")))
+            self.assertTrue((job / "remote-execution.json").exists())
+            self.assertFalse((job / "remote-result.json").exists())
+            (job / "remote-request.json").write_text(json.dumps({"accounts": [1]}))
+            self.assertEqual(list(remote.pending(Path(directory))), [])
+
+    def test_unwritable_interrupted_receipt_does_not_replay_or_raise(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = root / "automation-runs" / "interrupted"
+            job.mkdir(parents=True)
+            (job / "remote-request.json").write_text(json.dumps({"accounts": [1]}))
+            (job / "remote-execution.json").touch()
+            with patch.object(remote, "atomic", side_effect=PermissionError("locked")):
+                self.assertEqual(list(remote.pending(root)), [])
+            self.assertTrue((job / "remote-execution.json").exists())
+
     def test_progress_write_failure_does_not_abort_transfer(self):
         with (
             patch.object(remote, "atomic", side_effect=PermissionError()),

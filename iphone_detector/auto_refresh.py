@@ -206,7 +206,9 @@ def recover_completed(state):
     result = read(receipt)
     from iphone_detector.operations import verified_job
 
-    if not verified_job(job, result):
+    # A completed installation does not prove that the Wi-Fi bridge was restored.
+    # Keep the pending job and its attention state until cleanup is reviewed.
+    if result.get("cleanup_warning") or not verified_job(job, result):
         return False
     try:
         completed_at = receipt.stat().st_mtime

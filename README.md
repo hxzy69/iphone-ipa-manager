@@ -9,25 +9,25 @@ same saved assignments and job status.
 
 ## Download
 
-The latest Windows release is **0.3.4**.
+The latest Windows release is **0.3.5**.
 
-[**Download Windows installer — 0.3.4**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.4-preview/iPhoneIPAManager-0.3.4-setup-x64.exe)
+[**Download Windows installer — 0.3.5**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/iPhoneIPAManager-0.3.5-setup-x64.exe)
 
-[Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.4-preview/iPhoneIPAManager-0.3.4-windows-x64.zip)
+[Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/iPhoneIPAManager-0.3.5-windows-x64.zip)
 
-[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.3.4-preview)
-· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.4-preview/iPhoneIPAManager-0.3.4-source.zip)
-· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.4-preview/SHA256SUMS.txt)
+[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.3.5-preview)
+· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/iPhoneIPAManager-0.3.5-source.zip)
+· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/SHA256SUMS.txt)
 
 Run the setup EXE, or extract the portable ZIP and run `iPhoneIPAManager.exe`. Python is not required. The setup is per-user and does not request elevation.
 
-[Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.4-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
+[Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.3.5-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
 
-**Release status: 0.3.4 preview.** The existing installation engine has device
-testing behind it. This public distribution introduces clean onboarding and a
-smaller native helper; its validation and remaining device checks are recorded
-in [release validation](docs/VALIDATION.md). Experimental remote renewal is not
-a guarantee that an app will remain usable indefinitely.
+**Release status: 0.3.5 preview.** This update fixes connection authentication,
+Discord status/settings, IPA assignment and renewal consistency, cancellation,
+temporary-file cleanup and update recovery. Windows packaged checks and paired
+iPhone installation/profile-refresh tests passed. See
+[release validation](docs/VALIDATION.md) for the recorded test scope.
 
 ## Start here
 

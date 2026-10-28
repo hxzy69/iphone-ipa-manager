@@ -25,6 +25,9 @@ executable hash, runs tests, then packages the app. It does not install a servic
 register startup tasks, contact Apple, or operate a device. It stops on any failed
 command. A network connection is needed to fetch dependencies.
 
+To use an existing prepared environment, supply its interpreter with
+`tools/build.ps1 -Python C:\path\to\venv\Scripts\python.exe`.
+
 Outputs are in `dist/`: the standalone EXE, offline guide, third-party license
 texts, dependency inventories and a self-test receipt. `tools/package_release.py`
 creates versioned Windows and source ZIP files in `artifacts/`, each with SHA-256

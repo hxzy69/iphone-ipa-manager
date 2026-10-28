@@ -26,6 +26,6 @@
     }
   ],
   "changes": {
-    "pymobiledevice3": "Remote tunnel defaults to userspace mode; optional kernel-TUN import is lazy. Other modules are unmodified."
+    "pymobiledevice3": "Remote tunnel defaults to userspace mode; optional kernel-TUN import is lazy. Lockdown TCP and network-usbmux sessions/services require TLS and pin the saved DeviceCertificate on each execution channel. Async ServiceConnection TLS supports explicit certificate pins and closes rejected channels."
   }
 }

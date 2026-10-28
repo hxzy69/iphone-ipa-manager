@@ -6,13 +6,18 @@ from pathlib import Path
 import shutil
 
 
-def identity(path, *, digest=True):
+def identity(path, *, digest=True, stop=None):
     path = Path(path)
     before = path.stat()
     value = {"size": before.st_size, "mtime_ns": before.st_mtime_ns}
     if digest:
         with path.open("rb") as stream:
-            value["sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+            hasher = hashlib.sha256()
+            while chunk := stream.read(1024 * 1024):
+                if stop is not None:
+                    stop.check()
+                hasher.update(chunk)
+            value["sha256"] = hasher.hexdigest()
         after = path.stat()
         if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
             raise ValueError("The IPA changed while checking it. Wait for the transfer to finish.")
@@ -20,13 +25,18 @@ def identity(path, *, digest=True):
 
 
 @contextmanager
-def snapshot_inputs(job, request):
+def snapshot_inputs(job, request, stop=None):
     """Copy once, verify copied bytes, and remove only the copies owned by this call."""
     import copy
     import tempfile
     import uuid
     from iphone_detector.ipa_inbox import validate_ipa
 
+    def check():
+        if stop is not None:
+            stop.check()
+
+    check()
     if request.get("check_only"):
         yield request
         return
@@ -36,17 +46,24 @@ def snapshot_inputs(job, request):
     with tempfile.TemporaryDirectory(prefix="inputs-", dir=job) as directory:
         prepared = copy.deepcopy(request)
         for account in prepared["accounts"]:
+            check()
             expected = account.get("file_identity", {})
             if not expected.get("sha256"):
                 raise ValueError("This request has no content identity. Start a new run.")
             destination = (
                 Path(directory) / f"account-{account['account']}-{uuid.uuid4().hex[:12]}.ipa"
             )
-            shutil.copyfile(account["ipa"], destination)
-            actual = identity(destination)
+            with open(account["ipa"], "rb") as source, destination.open("wb") as output:
+                while chunk := source.read(1024 * 1024):
+                    check()
+                    output.write(chunk)
+            check()
+            actual = identity(destination, stop=stop)
+            check()
             if any(actual[key] != expected.get(key) for key in ("size", "sha256")):
                 raise ValueError("The IPA changed after this run was requested. Start a new run.")
-            validate_ipa(destination)
+            validate_ipa(destination, stop=stop)
+            check()
             account["ipa"] = str(destination)
         yield prepared
 

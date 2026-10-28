@@ -248,6 +248,7 @@ def launch(executable, preferences, gui=True, *, require_ack=True):
             except OSError, psutil.Error:
                 pass
         raise
+    return started
 
 
 def wait_for_exit(pid, created, timeout=90):
@@ -276,6 +277,7 @@ def activate(plan_path, parent_pid):
     preferences = None
     parent_closed = False
     managed = None
+    replacement_processes = []
     try:
         plan, executable = validate_plan(plan_path)
         if not parent_pid or not lock.acquire():
@@ -356,7 +358,7 @@ def activate(plan_path, parent_pid):
                 "version": __import__("iphone_detector").__version__,
             },
         )
-        launch(
+        replacement_processes = launch(
             executable,
             preferences,
             require_ack=version_tuple(plan.get("version", "0.2.1")) >= (0, 2, 1),
@@ -366,6 +368,16 @@ def activate(plan_path, parent_pid):
     except Exception as exc:
         if preferences is not None:
             try:
+                for process in replacement_processes:
+                    if process.poll() is None:
+                        owned = psutil.Process(process.pid)
+                        children = owned.children(recursive=True)
+                        for child in reversed(children):
+                            child.terminate()
+                        process.terminate()
+                        process.wait(timeout=10)
+                        for child in children:
+                            child.wait(timeout=10)
                 if managed is not None:
                     desktop_install.restore_installation(*managed)
                 configure_tasks(executable, old)

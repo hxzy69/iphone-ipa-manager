@@ -201,6 +201,46 @@ class GuidedUpdateTests(unittest.TestCase):
         self.assertEqual(json.loads(update.STATE.read_text())["phase"], "complete")
         self.assertEqual(launch.call_args.args[0], new)
 
+    def test_completion_write_failure_stops_replacement_before_rollback(self):
+        old, new = self.root / "old.exe", self.root / "new.exe"
+        old.write_bytes(b"old")
+        new.write_bytes(b"new")
+        plan = self.root / "ready.json"
+        write_json(plan, {"executable": str(new), "sha256": hashlib.sha256(b"new").hexdigest()})
+        parent = Mock(create_time=lambda: 1.0, exe=lambda: str(old), cmdline=lambda: [])
+        replacement = Mock(pid=456, poll=lambda: None)
+        child = Mock()
+        original_write = update.write_json
+
+        def fail_completion(path, value):
+            if path == update.STATE and value.get("phase") == "complete":
+                raise OSError("state unavailable")
+            return original_write(path, value)
+
+        with (
+            patch.object(update.sys, "executable", str(old)),
+            patch.object(
+                update.psutil,
+                "Process",
+                side_effect=lambda pid: (
+                    parent if pid == 123 else Mock(children=lambda recursive: [child])
+                ),
+            ),
+            patch.object(update.psutil, "process_iter", return_value=[]),
+            patch("iphone_detector.job_queue.pending", return_value=[]),
+            patch.object(update, "wait_for_exit"),
+            patch.object(update, "check_runtime"),
+            patch.object(update, "configure_tasks") as tasks,
+            patch.object(update, "write_json", side_effect=fail_completion),
+            patch.object(update, "launch", side_effect=[[replacement], []]) as launch,
+        ):
+            self.assertEqual(update.activate(plan, 123), 1)
+        child.terminate.assert_called_once()
+        replacement.terminate.assert_called_once()
+        replacement.wait.assert_called_once_with(timeout=10)
+        self.assertEqual(tasks.call_args.args, (new, old))
+        self.assertEqual(launch.call_args.args[0], old)
+
     def test_partial_task_migration_failure_rolls_back_before_relaunching_old_app(self):
         code, old, new, tasks, launch, _ = self.activation(
             failure=[OSError("simulated migration failure"), None]

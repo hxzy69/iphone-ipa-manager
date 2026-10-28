@@ -195,6 +195,13 @@ class ManagementDialog:
                 self.app.sync_saved()
         except queues.Empty:
             pass
+        except Exception:
+            import logging
+
+            logging.getLogger("iphone-detector.gui").exception(
+                "Could not synchronize the dashboard after an action."
+            )
+            self.app.status.set("Settings changed. Reopen the manager to reload its accounts.")
         try:
             from iphone_detector import dashboard, job_queue, operations
             from iphone_detector.job_history import describe

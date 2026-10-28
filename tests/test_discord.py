@@ -11,6 +11,90 @@ from iphone_detector.run_lock import RunLock
 
 
 class DiscordTests(unittest.TestCase):
+    def test_offline_retry_releases_old_credentials_when_settings_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            factory = Mock(side_effect=OSError("offline"))
+            changed = Mock(side_effect=[False, True])
+            outcome = bot.connect_with_retry(
+                factory,
+                "old-token",
+                Path(directory) / "stop",
+                sleep=Mock(),
+                changed=changed,
+            )
+            self.assertEqual(outcome, "settings-changed")
+            factory.assert_called_once()
+
+    def test_running_listener_reconnects_with_changed_settings_and_token(self):
+        import discord
+
+        old = {"user_id": 1, "guild_id": 2, "channel_id": 3}
+        new = {"user_id": 4, "guild_id": 5, "channel_id": 6}
+        calls, tokens = [], []
+
+        def load():
+            calls.append(None)
+            return (dict(old), "old-token") if not tokens else (dict(new), "new-token")
+
+        async def check(client):
+            await client.setup_hook()
+            if len(tokens) == 1:
+                await asyncio.wait_for(client.local_stop_task, 3)
+            else:
+                self.assertTrue(client.tree.get_commands(guild=discord.Object(id=5)))
+                await client.close()
+
+        def run(client, token, **kwargs):
+            tokens.append(token)
+            asyncio.run(check(client))
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(bot, "DATA_ROOT", Path(directory)),
+            patch.object(bot, "load_settings", side_effect=load),
+            patch("iphone_detector.logger.setup_logging"),
+            patch.object(RunLock, "acquire", return_value=True),
+            patch("iphone_detector.remote_tunnel.ensure_started"),
+            patch("iphone_detector.job_queue.ensure_started"),
+            patch("discord.app_commands.CommandTree.sync", new_callable=AsyncMock),
+            patch.object(discord.Client, "run", run),
+        ):
+            bot.run()
+        self.assertEqual(tokens, ["old-token", "new-token"])
+
+    def test_install_confirmation_rejects_change_during_network_preflight(self):
+        config = configured()
+        account = config["automation"]["accounts"][0]
+        before = {
+            "serial": "phone",
+            "accounts": [
+                {
+                    "account": 1,
+                    "email": account["email"],
+                    "ipa": "Original.ipa",
+                    "file_identity": {"size": 1, "mtime_ns": 1, "sha256": "a" * 64},
+                }
+            ],
+        }
+        import copy
+
+        after = copy.deepcopy(before)
+        after["accounts"][0]["file_identity"]["sha256"] = "b" * 64
+        with (
+            patch("iphone_detector.config.load_config", return_value=config),
+            patch("iphone_detector.background.make_job", side_effect=[before, after]),
+            patch("iphone_detector.remote_tunnel.enabled", return_value=False),
+            patch("iphone_detector.bridge_service.installed", return_value=False),
+            patch("iphone_detector.connection_router.route_ready", return_value=True),
+            patch.object(bot.subprocess, "Popen") as spawn,
+            self.assertRaisesRegex(ValueError, "changed during startup"),
+        ):
+            bot.Controller().start(
+                accounts=[0],
+                expected_assignment={"email": account["email"], "ipa": account["ipa"]},
+            )
+        spawn.assert_not_called()
+
     def test_unreadable_remote_settings_write_a_failure_receipt_before_any_launch(self):
         import ipa_manager
 
@@ -555,6 +639,31 @@ class DiscordTests(unittest.TestCase):
             ):
                 await updates_command.callback(interaction)
             self.assertIn("Try again later", interaction.followup.send.call_args.args[0])
+            status_command = next(item for item in commands if item.name == "status")
+            status_interaction = Mock(user=Mock(id=1), guild_id=2, channel_id=3)
+            status_interaction.response.defer = AsyncMock()
+            status_interaction.followup.send = AsyncMock()
+
+            def slow_status():
+                status_interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+                return "Renewal scheduled."
+
+            with (
+                patch("iphone_detector.auto_refresh.describe", side_effect=slow_status),
+                patch("iphone_detector.remote_tunnel.enabled", return_value=False),
+                patch("iphone_detector.worker_registry.active_jobs", return_value=[]),
+            ):
+                await status_command.callback(status_interaction)
+            status_interaction.followup.send.assert_awaited_once()
+            self.assertIn("Renewal scheduled.", status_interaction.followup.send.call_args.args[0])
+            status_interaction.followup.send.reset_mock()
+            status_interaction.response.defer.reset_mock()
+            with patch("iphone_detector.remote_tunnel.enabled", side_effect=OSError("unreadable")):
+                await status_command.callback(status_interaction)
+            status_interaction.response.defer.assert_awaited_once()
+            self.assertIn(
+                "could not be verified", status_interaction.followup.send.call_args.args[0]
+            )
             await client.close()
 
         with (

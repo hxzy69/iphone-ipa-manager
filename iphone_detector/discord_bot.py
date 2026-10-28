@@ -80,13 +80,15 @@ def command(arguments):
     return prefix + arguments
 
 
-def connect_with_retry(factory, token, stop_file, sleep=time.sleep):
+def connect_with_retry(factory, token, stop_file, sleep=time.sleep, changed=None):
     """Gateway reconnect alone does not retry failures during login/command sync."""
     import aiohttp
     import discord
 
     delay = 5
     while not stop_file.exists():
+        if changed is not None and changed():
+            return "settings-changed"
         try:
             factory().run(token, log_handler=None)
             return
@@ -103,6 +105,8 @@ def connect_with_retry(factory, token, stop_file, sleep=time.sleep):
             for _ in range(delay):
                 if stop_file.exists():
                     return
+                if changed is not None and changed():
+                    return "settings-changed"
                 sleep(1)
             delay = min(delay * 2, 60)
         except discord.LoginFailure:
@@ -123,14 +127,23 @@ class Controller:
         self._cancel_start = threading.Event()
         self._launch_lock = threading.Lock()
 
-    async def start_async(self, refresh=False, accounts=None):
+    async def start_async(self, refresh=False, accounts=None, expected_assignment=None):
         """Keep discovery and IPA hashing off the Discord gateway event loop."""
         if self.starting:
             raise RuntimeError("An installation is already starting.")
         self.starting = True
         self._cancel_start.clear()
         worker = asyncio.create_task(
-            asyncio.to_thread(self.start, refresh=refresh, accounts=accounts)
+            asyncio.to_thread(
+                self.start,
+                refresh=refresh,
+                accounts=accounts,
+                **(
+                    {"expected_assignment": expected_assignment}
+                    if expected_assignment is not None
+                    else {}
+                ),
+            )
         )
         try:
             await asyncio.shield(worker)
@@ -146,7 +159,7 @@ class Controller:
         finally:
             self.starting = False
 
-    def start(self, refresh=False, accounts=None):
+    def start(self, refresh=False, accounts=None, expected_assignment=None):
         if refresh and accounts is not None:
             raise ValueError("Profile refresh always renews all configured apps.")
         if (self.process is not None and self.process.poll() is None) or (
@@ -158,6 +171,21 @@ class Controller:
         from iphone_detector.config import load_config
         from iphone_detector.settings import get_workflow
         from iphone_detector import remote_tunnel
+
+        original_request = None
+        if expected_assignment is not None:
+            original_config = load_config() or {}
+            original_workflow = get_workflow(original_config)
+            if (
+                accounts is None
+                or len(accounts) != 1
+                or not 0 <= accounts[0] < len(original_workflow)
+            ):
+                raise ValueError("The confirmed account is no longer available.")
+            current = original_workflow[accounts[0]]
+            if any(current[key] != expected_assignment.get(key) for key in ("email", "ipa")):
+                raise ValueError("The confirmed assignment changed. Open /inbox or /assign again.")
+            original_request = make_job(original_config, "Network", accounts=accounts)
 
         if refresh:
             from iphone_detector.connection_router import route_ready
@@ -183,6 +211,12 @@ class Controller:
         config = load_config() or {}
         chosen = selected_accounts(get_workflow(config), accounts)
         request = make_job(config, "Network", accounts=accounts)
+        from iphone_detector.operations import selection_matches
+
+        if original_request is not None and not selection_matches(original_request, request):
+            raise ValueError(
+                "The account, phone or IPA changed during startup. Start a new request."
+            )
         self.job = (
             DATA_ROOT
             / "automation-runs"
@@ -418,11 +452,13 @@ def run():
                 except Exception:
                     LOG.exception("Could not report Discord installation outcome")
 
-            async def start_install(index, install_interaction):
+            async def start_install(index, install_interaction, expected_assignment=None):
                 """Start a single-account install from a picker; reports in the channel."""
                 await install_interaction.response.defer(ephemeral=True)
                 try:
-                    await controller.start_async(accounts=[index])
+                    await controller.start_async(
+                        accounts=[index], expected_assignment=expected_assignment
+                    )
                     controller.task = asyncio.create_task(report(install_interaction.channel))
                     await install_interaction.followup.send(
                         "Started installing account %d only. "
@@ -584,20 +620,33 @@ def run():
             )
             async def status(interaction: discord.Interaction):
                 if await allow(interaction):
+                    await interaction.response.defer(ephemeral=True)
                     from iphone_detector.auto_refresh import describe as automatic_status
-
-                    detail = ("\n" + remote_tunnel.describe()) if remote_tunnel.enabled() else ""
-                    detail += "\n" + automatic_status()
                     from iphone_detector.worker_registry import active_jobs
 
-                    active = await asyncio.to_thread(active_jobs, DATA_ROOT)
+                    def collect():
+                        detail = (
+                            ("\n" + remote_tunnel.describe()) if remote_tunnel.enabled() else ""
+                        )
+                        detail += "\n" + automatic_status()
+                        return detail, active_jobs(DATA_ROOT)
+
+                    try:
+                        detail, active = await asyncio.to_thread(collect)
+                    except Exception:
+                        LOG.exception("Discord status could not read saved runtime state")
+                        await interaction.followup.send(
+                            "Status could not be verified. Check /diagnostics and the local logs.",
+                            ephemeral=True,
+                        )
+                        return
                     state = controller.state
                     if active:
                         state = "Active: %s · accounts %s" % (
                             active[0]["mode"],
                             ", ".join(map(str, active[0]["accounts"])),
                         )
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"iPhone IPA Manager {__version__}\n" + state + detail, ephemeral=True
                     )
 
@@ -923,10 +972,32 @@ def run():
             LOG.info("Discord commands registered in configured private server.")
 
             async def local_stop():
+                nonlocal reload_requested
                 last_remote_check = 0
                 last_delivery = 0
                 while not self.is_closed():
                     if stop_file.exists():
+                        await self.close()
+                        return
+                    try:
+                        latest_settings, latest_token = await asyncio.to_thread(load_settings)
+                    except Exception:
+                        # Revoke the old audience while saved settings are unreadable.
+                        settings.update(user_id=None, guild_id=None, channel_id=None)
+                        latest_settings = None
+                    if latest_settings is not None and (
+                        latest_settings != settings or latest_token != token
+                    ):
+                        settings.update(latest_settings)
+                        reload_requested = True
+                    if (
+                        reload_requested
+                        and not controller.starting
+                        and not (
+                            controller.process is not None and controller.process.poll() is None
+                        )
+                        and not (controller.task is not None and not controller.task.done())
+                    ):
                         await self.close()
                         return
                     if time.monotonic() - last_remote_check > 30:
@@ -969,13 +1040,28 @@ def run():
             await super().close()
 
     try:
-        connect_with_retry(
-            lambda: Bot(
-                intents=discord.Intents.none(), allowed_mentions=discord.AllowedMentions.none()
-            ),
-            token,
-            stop_file,
-        )
+        while not stop_file.exists():
+            reload_requested = False
+            settings, token = load_settings()
+            guild = discord.Object(id=settings["guild_id"])
+
+            def changed():
+                try:
+                    latest, latest_token = load_settings()
+                    return latest != settings or latest_token != token
+                except Exception:
+                    return False
+
+            outcome = connect_with_retry(
+                lambda: Bot(
+                    intents=discord.Intents.none(), allowed_mentions=discord.AllowedMentions.none()
+                ),
+                token,
+                stop_file,
+                changed=changed,
+            )
+            if not reload_requested and outcome != "settings-changed":
+                break
     finally:
         controller.stop()
         singleton.close()

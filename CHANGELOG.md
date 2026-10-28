@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.5 — verified connection and workflow fixes — 2026-10-28
+
+- Acknowledge Discord /status before reading renewal or worker state, move those
+  reads off the gateway event loop, and report failures after acknowledgement.
+
+- Keep authenticated remote tunnels open when job-result storage fails; retain
+  durable dispatch claims so uncertain requests cannot replay.
+- Apply saved Discord authorization and token changes to the running listener,
+  reconnecting after active installations finish, including during offline retries.
+- Bind Discord Install now confirmations to their account assignment and reject
+  phone, account or IPA changes during connection preflight.
+- Require a matching verified installation content identity before profile-only
+  renewal, so overwritten IPAs with unchanged versions receive a full installation.
+- Preserve unresolved Wi-Fi bridge cleanup attention during automatic recovery.
+- Make IPA copying, hashing and CRC validation cancellable and check cancellation
+  before starting the native backend.
+- Keep the Activity window polling after synchronization errors and perform
+  account-enrollment validation outside the desktop event loop.
+- Own complete native extraction roots through signing/export/installation and
+  remove them on errors. Use job-scoped temporary directories and allow
+  maintenance to remove old abandoned native inputs without deleting receipts.
+- Stop replacement processes before rolling back an update after a failed final
+  activation-state write.
+- Pin the saved paired device certificate on execution lockdown and service TLS
+  channels over TCP and network usbmux. Reject plaintext network sessions and
+  services, close rejected connections, and never reconnect an unpaired client
+  after a failed network certificate check.
+- Add regression coverage, including real TLS handshakes with matching and
+  mismatched certificates for socket-first and existing-stream connections.
+
 ## 0.3.4 — reliability fixes — 2026-10-27
 
 - Preserve verified completion receipts and pause the queue for review when Wi-Fi bridge cleanup cannot be verified.

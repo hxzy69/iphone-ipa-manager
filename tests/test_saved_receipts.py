@@ -14,6 +14,19 @@ from iphone_detector.storage import write_json
 
 
 class SavedReceiptTests(unittest.TestCase):
+    def test_refresh_requires_and_preserves_full_install_content_identity(self):
+        job = self.root / "automation-runs" / "installed"
+        job.mkdir(parents=True)
+        serial, entry = self.request["serial"], self.request["accounts"][0]
+        self.assertFalse(operations.installed_content_matches(self.root, serial, entry))
+        operations.record(job, self.request, 1)
+        self.assertTrue(operations.installed_content_matches(self.root, serial, entry))
+        operations.record(job, self.request, 1, "refresh")
+        self.assertTrue(operations.installed_content_matches(self.root, serial, entry))
+        changed = copy.deepcopy(entry)
+        changed["file_identity"]["sha256"] = "b" * 64
+        self.assertFalse(operations.installed_content_matches(self.root, serial, changed))
+
     def test_unrepresentable_dashboard_date_is_unknown(self):
         self.assertEqual(dashboard.date(10**100), "Unknown")
 

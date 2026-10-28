@@ -16,7 +16,7 @@ from collections.abc import AsyncGenerator, Generator, Iterable
 from contextlib import contextmanager, suppress
 from enum import Enum
 from pathlib import Path
-from ssl import SSLZeroReturnError, TLSVersion
+from ssl import SSLZeroReturnError, TLSVersion, SSLCertVerificationError
 from types import TracebackType
 from typing import Any, Optional, cast, overload
 
@@ -612,6 +612,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
             return False
 
         self.session_id = start_session.get("SessionID")
+        if self.requires_paired_tls and not start_session.get("EnableSessionSSL"):
+            await self.service.close()
+            raise SSLCertVerificationError("Network pairing session requires TLS")
         if start_session.get("EnableSessionSSL"):
             if (Version(self.product_version) < Version("5.0")) and (self.device_class != DeviceClass.WATCH):
                 # TLS v1 is the protocol required for versions prior to iOS 5
@@ -620,8 +623,16 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
             with self.ssl_file() as f:
                 try:
-                    await self.service.ssl_start(f)
+                    if self.requires_paired_tls:
+                        await self.service.ssl_start(f, expected_peer=self.paired_device_certificate())
+                    else:
+                        await self.service.ssl_start(f)
                 except (SSLZeroReturnError, ConnectionTerminatedError):
+                    if self.requires_paired_tls:
+                        # Never return a usable, unpaired network client after
+                        # failed authentication or reconnect without its pin.
+                        await self.service.close()
+                        raise
                     # possible when we have a pair record, but it was removed on-device
                     self.pair_record = None
                     await self.areestablish_connection()
@@ -874,6 +885,20 @@ class LockdownClient(ABC, LockdownServiceProvider):
             raise StartServiceError(name, response.get("Error", ""))
         return response
 
+    @property
+    def requires_paired_tls(self) -> bool:
+        return isinstance(self, TcpLockdownClient) or (
+            isinstance(self, UsbmuxLockdownClient)
+            and self.service.mux_device is not None
+            and self.service.mux_device.connection_type == "Network"
+        )
+
+    def paired_device_certificate(self) -> bytes:
+        certificate = (self.pair_record or {}).get("DeviceCertificate")
+        if not isinstance(certificate, bytes) or not certificate:
+            raise SSLCertVerificationError("Saved paired device certificate is unavailable")
+        return certificate
+
     async def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         """Start a named lockdownd service and open a connection to it.
 
@@ -889,11 +914,20 @@ class LockdownClient(ABC, LockdownServiceProvider):
         :raises StartServiceError: lockdownd refused to start the service.
         """
         attr = await self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
+        if self.requires_paired_tls and not attr.get("EnableServiceSSL"):
+            raise SSLCertVerificationError("Network device service requires TLS")
         service_connection = await self.create_service_connection(attr["Port"])
 
-        if attr.get("EnableServiceSSL", False):
-            with self.ssl_file() as f:
-                await service_connection.ssl_start(f)
+        try:
+            if attr.get("EnableServiceSSL", False):
+                with self.ssl_file() as f:
+                    if self.requires_paired_tls:
+                        await service_connection.ssl_start(f, expected_peer=self.paired_device_certificate())
+                    else:
+                        await service_connection.ssl_start(f)
+        except BaseException:
+            await service_connection.close()
+            raise
         return service_connection
 
     async def close(self) -> None:

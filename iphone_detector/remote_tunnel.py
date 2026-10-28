@@ -368,12 +368,18 @@ async def execute_job(job, rsd):
                     "The selected account or IPA changed before remote dispatch. Start a new request."
                 )
         from iphone_detector.ipa_assignments import needs_install
+        from iphone_detector.operations import installed_content_matches
 
         config_snapshot = load_config() or {}
+        refresh_requested = (job / "refresh-request").exists()
         pending_installs = {
             entry["account"]
             for entry in request.get("accounts", [])
             if needs_install(config_snapshot, entry["account"], Path(entry["ipa"]).stem)
+            or (
+                refresh_requested
+                and not installed_content_matches(job.parent.parent, expected, entry)
+            )
         }
         request.update(
             serial=rsd.udid,
@@ -381,7 +387,6 @@ async def execute_job(job, rsd):
             or getattr(rsd, "display_name", None)
             or "iPhone",
         )
-        refresh_requested = (job / "refresh-request").exists()
         request["profile_refresh"] = refresh_requested
         from iphone_detector.profile_refresh import Inventory
 
@@ -481,7 +486,12 @@ async def execute_job(job, rsd):
             outcome["verified_accounts"] = numbers[:completed] if "numbers" in locals() else []
             if not outcome.get("ok"):
                 outcome["completed_accounts"] = completed
-            atomic(job / "remote-result.json", outcome)
+            try:
+                atomic(job / "remote-result.json", outcome)
+            except OSError:
+                # The durable claim remains in place, so this request cannot
+                # be replayed. Keep the authenticated roaming session alive.
+                LOG.exception("Could not save remote job result; inspect the job before retrying.")
         for path in job.glob("remote-*.ipa") if claimed else ():
             try:
                 path.unlink(missing_ok=True)
@@ -533,19 +543,27 @@ def pending(data_root=None):
                 "backend-events.jsonl",
             )
         ):
-            atomic(
-                job / "remote-result.json",
-                {
-                    "ok": False,
-                    "error": "Remote worker was interrupted after dispatch. Inspect /history and the phone before retrying; this request was not replayed.",
-                },
-            )
+            try:
+                atomic(
+                    job / "remote-result.json",
+                    {
+                        "ok": False,
+                        "error": "Remote worker was interrupted after dispatch. Inspect /history and the phone before retrying; this request was not replayed.",
+                    },
+                )
+            except OSError:
+                LOG.exception(
+                    "Could not save interrupted remote job result; request remains paused."
+                )
             continue
         if cancelled(job):
-            atomic(
-                job / "remote-result.json",
-                {"ok": False, "error": "Remote request expired or was cancelled."},
-            )
+            try:
+                atomic(
+                    job / "remote-result.json",
+                    {"ok": False, "error": "Remote request expired or was cancelled."},
+                )
+            except OSError:
+                LOG.exception("Could not save cancelled remote job result; request remains paused.")
             continue
         yield job
 

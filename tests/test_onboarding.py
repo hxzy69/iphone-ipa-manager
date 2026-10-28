@@ -154,9 +154,32 @@ class AccountDialogueTests(unittest.TestCase):
         dialog.events.put({"stage": "complete", "email": "owner@example.com"})
         dialog.source, dialog.signature = Path("ExampleApp.ipa"), (100, 200)
         dialog.window, dialog.on_saved = Mock(), Mock()
-        with patch("iphone_detector.account_dialog.append_account", return_value=1) as append:
+        dialog.status = Mock()
+        import threading
+        import time
+
+        started, release = threading.Event(), threading.Event()
+
+        def enroll(*args):
+            started.set()
+            if not release.wait(5):
+                raise RuntimeError("test timed out")
+            return 1
+
+        with patch("iphone_detector.account_dialog.append_account", side_effect=enroll) as append:
             dialog.poll()
-            dialog.poll()
+            try:
+                self.assertTrue(started.wait(2))
+                dialog.on_saved.assert_not_called()
+                self.assertTrue(dialog.saving)
+                dialog.cancel()
+                dialog.window.destroy.assert_not_called()
+            finally:
+                release.set()
+            deadline = time.monotonic() + 3
+            while not dialog.closed and time.monotonic() < deadline:
+                dialog.poll()
+                time.sleep(0.01)
         append.assert_called_once_with("owner@example.com", dialog.source, (100, 200))
         dialog.on_saved.assert_called_once_with(1)
         dialog.window.destroy.assert_called_once()

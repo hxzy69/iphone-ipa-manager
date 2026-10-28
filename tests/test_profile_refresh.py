@@ -115,8 +115,15 @@ class ProfileRefreshTests(unittest.TestCase):
         from iphone_detector import remote_tunnel as remote
         import time
 
-        for failure in (None, ConnectionError("offline")):
-            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as root:
+        for known_content, failure in (
+            (True, None),
+            (True, ConnectionError("offline")),
+            (False, None),
+        ):
+            with (
+                self.subTest(known_content=known_content, failure=failure),
+                tempfile.TemporaryDirectory() as root,
+            ):
                 job = Path(root)
                 remote.atomic(job / "remote-request.json", {"accounts": [2]})
                 (job / "remote-heartbeat").touch()
@@ -139,6 +146,10 @@ class ProfileRefreshTests(unittest.TestCase):
                         return_value={"timeout": 5, "accounts": [{"account": 2, "ipa": "App.ipa"}]},
                     ),
                     patch("iphone_detector.background.run_background", side_effect=native),
+                    patch(
+                        "iphone_detector.operations.installed_content_matches",
+                        return_value=known_content,
+                    ),
                     patch.object(remote, "compression_level", return_value=9),
                     patch.object(remote, "upload_streams", return_value=1),
                     patch.object(remote, "lookup", new_callable=AsyncMock, return_value={}),
@@ -150,9 +161,11 @@ class ProfileRefreshTests(unittest.TestCase):
                         new_callable=AsyncMock,
                         return_value=False,
                         side_effect=failure,
-                    ),
+                    ) as renew,
                 ):
                     asyncio.run(remote.execute_job(job, Mock(udid="phone", name="iPhone")))
+                if not known_content:
+                    renew.assert_not_awaited()
                 receipt = json.loads((job / "remote-result.json").read_text())
                 if failure:
                     full.assert_not_awaited()

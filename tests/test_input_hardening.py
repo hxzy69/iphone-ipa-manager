@@ -17,6 +17,28 @@ from iphone_detector.storage import write_json
 
 
 class InputHardeningTests(unittest.TestCase):
+    def test_hash_and_archive_validation_propagate_cancellation(self):
+        from iphone_detector.cancellation import Cancelled
+
+        stop = Mock()
+        stop.check.side_effect = Cancelled("stopped")
+        with self.assertRaises(Cancelled):
+            identity(self.ipa, stop=stop)
+        with self.assertRaises(Cancelled):
+            validate_ipa(self.ipa, stop=stop)
+
+    def test_cancel_during_input_copy_removes_snapshot(self):
+        from iphone_detector.cancellation import Cancelled
+
+        request = {
+            "accounts": [{"account": 1, "ipa": str(self.ipa), "file_identity": identity(self.ipa)}]
+        }
+        stop = Mock()
+        stop.check.side_effect = [None, None, Cancelled("stopped")]
+        with self.assertRaises(Cancelled), snapshot_inputs(self.job, request, stop):
+            self.fail("cancelled preparation must not yield")
+        self.assertEqual(list(self.job.glob("inputs-*")), [])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

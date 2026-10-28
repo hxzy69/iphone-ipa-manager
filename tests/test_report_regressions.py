@@ -21,6 +21,21 @@ from iphone_detector.wifi import BridgeCleanupError
 
 
 class ReportRegressionTests(unittest.TestCase):
+    def test_activity_poll_continues_after_account_sync_error(self):
+        import queue
+
+        dialog = Mock()
+        dialog.window.winfo_exists.return_value = True
+        dialog.action_events.get_nowait.return_value = ("Restored", None, None)
+        dialog.app.sync_saved.side_effect = ValueError("accounts removed")
+        dialog.events.get_nowait.side_effect = queue.Empty
+        dialog.loading = True
+        management_dialog.ManagementDialog.poll(dialog)
+        dialog.app.root.after.assert_called_with(100, dialog.poll)
+        dialog.app.status.set.assert_called_with(
+            "Settings changed. Reopen the manager to reload its accounts."
+        )
+
     def test_cleanup_failure_preserves_verified_worker_result(self):
         completed = {"ok": True, "completed_accounts": 1}
         with (

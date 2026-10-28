@@ -18,8 +18,13 @@ do not belong here.
 
 `python/` contains the exact installed sources for pymobiledevice3 11.38.0,
 pmd-pytcp 0.3.8, pmd-net-addr 0.0.3 and pmd-net-proto 0.0.3. Their GPL-3.0-or-later
-licenses are retained. The sole transport patch defaults to userspace networking
-and defers the unused kernel-TUN import, allowing the release to omit Wintun.
+licenses are retained. Transport patches default to userspace networking
+and defer the unused kernel-TUN import, allowing the release to omit Wintun.
+Network lockdown sessions and their service connections require TLS and verify
+the device certificate against the saved Apple pairing record on each connection.
+The async TLS transport closes channels that fail this explicit certificate pin.
+Services without authenticated TLS are rejected on network lockdown transports;
+the application can use its authenticated RemotePairing fallback instead.
 `python/SOURCES.json` records versions and the patch. These sources take precedence
 in source runs, tests, and the PyInstaller analysis.
 

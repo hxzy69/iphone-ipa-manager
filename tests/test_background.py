@@ -10,6 +10,25 @@ from fixtures import ACCOUNTS as DEFAULT_ACCOUNTS
 
 
 class BackgroundTests(unittest.TestCase):
+    def test_cancelled_preparation_does_not_dispatch_native_worker(self):
+        import threading
+        from iphone_detector.cancellation import Cancelled
+
+        with tempfile.TemporaryDirectory() as directory:
+            job = Path(directory)
+            event = threading.Event()
+            event.set()
+            with (
+                patch.object(background, "cache_executable", return_value=Path("backend.exe")),
+                patch.object(background.subprocess, "Popen") as spawn,
+                self.assertRaises(Cancelled),
+            ):
+                background.run_background(
+                    job, background.BackgroundStop(event), request_override={"accounts": []}
+                )
+            spawn.assert_not_called()
+            self.assertFalse((job / "native-dispatch.json").exists())
+
     def test_native_abort_never_counts_as_success_even_with_a_success_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
             job = Path(directory)
@@ -77,7 +96,7 @@ class BackgroundTests(unittest.TestCase):
 
         item = patch(
             "iphone_detector.input_integrity.snapshot_inputs",
-            side_effect=lambda job, request: nullcontext(request),
+            side_effect=lambda job, request, stop=None: nullcontext(request),
         )
         item.start()
         self.addCleanup(item.stop)

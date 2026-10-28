@@ -1,7 +1,7 @@
-param([switch]$SkipNative)
+param([switch]$SkipNative, [string]$Python)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$python = Join-Path $projectRoot '.venv\Scripts\python.exe'
+if (-not $Python) { $Python = Join-Path $projectRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python)) { throw 'Create .venv and install requirements-dev.txt first.' }
 
 function Invoke-Checked {

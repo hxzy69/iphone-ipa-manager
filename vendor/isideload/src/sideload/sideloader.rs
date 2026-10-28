@@ -25,6 +25,7 @@ use rootcause::{option_ext::OptionExt, prelude::*};
 use tracing::info;
 
 pub struct Sideloader<C: MaxCertsCallback> {
+    extractions: Vec<super::application::ExtractionRoot>,
     team_selection: TeamSelection,
     storage: Box<dyn SideloadingStorage>,
     dev_session: DeveloperSession,
@@ -52,6 +53,7 @@ impl<C: MaxCertsCallback> Sideloader<C> {
         delete_app_after_install: bool,
     ) -> Self {
         Sideloader {
+            extractions: Vec::new(),
             team_selection,
             storage,
             dev_session,
@@ -250,7 +252,13 @@ impl<C: MaxCertsCallback> Sideloader<C> {
 
         info!("App signed!");
 
-        Ok((app.bundle.bundle_dir.clone(), special))
+        let signed_path = app.bundle.bundle_dir.clone();
+        // The caller may export or install this bundle while the sideloader lives.
+        // Keep ownership until then, including on transfer errors or cancellation.
+        if let Some(root) = app.extraction.take() {
+            self.extractions.push(root);
+        }
+        Ok((signed_path, special))
     }
 
     #[cfg(feature = "install")]

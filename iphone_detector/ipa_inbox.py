@@ -7,6 +7,7 @@ from pathlib import Path
 import plistlib
 import re
 import stat
+from iphone_detector.cancellation import Cancelled
 
 MAX_MEMBERS = 100_000
 MAX_EXPANDED = 8 * 1024**3
@@ -14,7 +15,7 @@ MAX_MEMBER = 2 * 1024**3
 MAX_METADATA = 1024 * 1024
 
 
-def validate_ipa(path):
+def validate_ipa(path, *, stop=None):
     """Structural check shared by every Discord/PC assignment path."""
     try:
         with zipfile.ZipFile(path) as archive:
@@ -25,6 +26,8 @@ def validate_ipa(path):
             if len(names) != len({n.casefold() for n in names}):
                 raise ValueError("This IPA contains duplicate or conflicting archive paths.")
             for member in members:
+                if stop is not None:
+                    stop.check()
                 name = member.orig_filename
                 normalized = name.replace("\\", "/")
                 if (
@@ -85,14 +88,21 @@ def validate_ipa(path):
             binary = main[0].rsplit("/", 1)[0] + "/" + executable
             if binary not in names or archive.getinfo(binary).file_size == 0:
                 raise ValueError("The IPA app executable is missing or empty.")
-            if archive.testzip() is not None:
-                raise ValueError("The IPA is damaged or incomplete.")
+            for member in members:
+                if stop is not None:
+                    stop.check()
+                with archive.open(member) as entry:
+                    while entry.read(1024 * 1024):
+                        if stop is not None:
+                            stop.check()
             return {
                 "bundle_id": bundle,
                 "version": info["CFBundleVersion"],
                 "name": info.get("CFBundleDisplayName", info.get("CFBundleName", bundle)),
                 "expanded_bytes": sum(m.file_size for m in members),
             }
+    except Cancelled:
+        raise
     except (zipfile.BadZipFile, RuntimeError, EOFError) as exc:
         raise ValueError("The IPA is damaged or incomplete.") from exc
 

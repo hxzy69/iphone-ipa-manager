@@ -201,6 +201,25 @@ class AutoRefreshTests(unittest.TestCase):
                 self.assertTrue(auto.read(auto.STATE)["recovered"])
                 self.assertNotIn("pending_job", auto.read(auto.STATE))
 
+    def test_recovery_preserves_attention_for_unverified_bridge_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = root / "job"
+            job.mkdir()
+            self.seed(job)
+            (job / "result.json").write_text(
+                json.dumps({"ok": True, "completed_accounts": 3, "cleanup_warning": "bridge"})
+            )
+            state = {"pending_job": str(job), "started_at": 0, "notified": True}
+            with (
+                patch.object(auto, "SUCCESS", root / "success.json"),
+                patch.object(auto, "STATE", root / "state.json"),
+            ):
+                auto.STATE.write_text(json.dumps(state))
+                self.assertFalse(auto.recover_completed(state))
+                self.assertEqual(auto.read(auto.STATE), state)
+                self.assertFalse(auto.SUCCESS.exists())
+
     def test_failed_partial_or_old_receipts_never_resume_automatic_retries(self):
         import os
 

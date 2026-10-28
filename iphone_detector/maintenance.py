@@ -41,6 +41,24 @@ def cleanup_candidates(root=DATA_ROOT, *, now=None):
         for job in parent.glob("*"):
             if job.is_symlink() or not job.is_dir() or job.resolve() in active:
                 continue
+            # Native inputs are disposable. A dead controller cannot run its
+            # context-manager cleanup; preserve its receipts and diagnostics.
+            for temporary in job.glob("native-temp-*"):
+                if (
+                    temporary.is_symlink()
+                    or temporary.is_junction()
+                    or not temporary.is_dir()
+                    or now - temporary.stat().st_mtime < 86400
+                ):
+                    continue
+                for path in temporary.rglob("*"):
+                    if (
+                        path.is_file()
+                        and not path.is_symlink()
+                        and not path.is_junction()
+                        and path.resolve().is_relative_to(temporary.resolve())
+                    ):
+                        values.append(path)
             if read(job / "result.json").get("ok") is not True:
                 continue  # Unresolved jobs retain their diagnostic evidence.
             for path in job.glob("*.log"):
@@ -105,13 +123,26 @@ def clean(root=DATA_ROOT):
 def _clean_locked(root):
     root = Path(root).resolve()
     removed = 0
+    temporary_parents = set()
     for path in cleanup_candidates(root):
         # Validate every final target on Windows. Never recursively remove a folder.
         resolved = path.resolve()
         if not resolved.is_relative_to(root) or resolved == root or path.is_symlink():
             raise ValueError("Maintenance target is outside the application data directory.")
         path.unlink()
+        for parent in path.parents:
+            if not parent.is_relative_to(root) or parent == root:
+                break
+            if any(part.startswith("native-temp-") for part in parent.relative_to(root).parts):
+                temporary_parents.add(parent)
         removed += 1
+    for folder in sorted(temporary_parents, key=lambda p: len(p.parts), reverse=True):
+        if folder.is_symlink() or folder.is_junction() or not folder.resolve().is_relative_to(root):
+            continue
+        try:
+            folder.rmdir()
+        except OSError:
+            pass
     return removed
 
 

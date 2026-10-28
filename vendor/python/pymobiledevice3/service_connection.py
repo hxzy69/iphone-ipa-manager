@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import hmac
 import logging
 import plistlib
 import socket
@@ -488,7 +489,9 @@ class ServiceConnection:
             # masking the original error.
             raise ConnectionTerminatedError() from e
 
-    async def ssl_start(self, certfile: str, keyfile: Optional[str] = None) -> None:
+    async def ssl_start(
+        self, certfile: str, keyfile: Optional[str] = None, *, expected_peer: Optional[bytes] = None
+    ) -> None:
         """
         Asynchronously start an SSL connection.
 
@@ -536,6 +539,16 @@ class ServiceConnection:
                     if tls_transport is None:
                         raise ConnectionTerminatedError()
                     self.writer = asyncio.StreamWriter(tls_transport, protocol, self.reader, loop)
+            if expected_peer is not None:
+                try:
+                    expected = ssl.PEM_cert_to_DER_cert(expected_peer.decode("ascii"))
+                    tls = self.writer.get_extra_info("ssl_object")
+                    actual = tls.getpeercert(binary_form=True) if tls is not None else None
+                    if not actual or not hmac.compare_digest(actual, expected):
+                        raise ssl.SSLCertVerificationError("Paired device certificate mismatch")
+                except Exception:
+                    await self.close()
+                    raise
         except OSError as e:
             raise ConnectionTerminatedError() from e
 

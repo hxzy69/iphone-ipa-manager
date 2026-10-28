@@ -25,7 +25,19 @@ static ALT_PAIRING_FILE: &str = "ALTPairingFile.dat";
 
 pub struct Application {
     pub bundle: Bundle,
-    //pub temp_path: PathBuf,
+    pub(crate) extraction: Option<ExtractionRoot>,
+}
+
+pub(crate) struct ExtractionRoot(PathBuf);
+
+impl Drop for ExtractionRoot {
+    fn drop(&mut self) {
+        if let Err(error) = isideload_vfs::fs::remove_dir_all(&self.0) {
+            if isideload_vfs::fs::metadata(&self.0).is_ok() {
+                warn!("Could not remove owned IPA extraction: {error}");
+            }
+        }
+    }
 }
 
 impl Application {
@@ -37,10 +49,12 @@ impl Application {
         }
 
         let mut bundle_path = path.clone();
-        //let mut temp_path = PathBuf::new();
+        let mut extraction = None;
 
         if isideload_vfs::fs::metadata(&bundle_path)?.is_file() {
-            let temp_dir = isideload_vfs::fs::temp_dir();
+            let temp_dir = std::env::var_os("IPA_MANAGER_NATIVE_TEMP")
+                .map(PathBuf::from)
+                .unwrap_or_else(isideload_vfs::fs::temp_dir);
             let temp_path = temp_dir.join(format!("ipa-manager-extract-{}", uuid::Uuid::new_v4()));
 
             let file = File::open(&path).context("Failed to open application archive")?;
@@ -81,6 +95,7 @@ impl Application {
 
             isideload_vfs::fs::create_dir_all(&temp_path)
                 .context("Failed to create temporary directory")?;
+            extraction = Some(ExtractionRoot(temp_path.clone()));
             archive
                 .extract(&temp_path)
                 .context("Failed to extract application archive")?;
@@ -126,7 +141,8 @@ impl Application {
         let bundle = Bundle::new(bundle_path)?;
 
         Ok(Application {
-            bundle, /*temp_path*/
+            bundle,
+            extraction,
         })
     }
 
@@ -423,6 +439,20 @@ mod untrusted_archive_tests {
     use super::Application;
     use std::fs::File;
     use zip::{ZipWriter, write::SimpleFileOptions};
+
+    #[test]
+    fn extraction_owner_cleans_the_whole_tree_on_error() {
+        let root = std::env::temp_dir().join(format!("ipa-owner-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("Payload/Test.app")).unwrap();
+        std::fs::write(root.join("Payload/Test.app/binary"), b"app").unwrap();
+        std::fs::write(root.join("extra-archive-member"), b"extra").unwrap();
+        let result: Result<(), &str> = (|| {
+            let _owner = super::ExtractionRoot(root.clone());
+            Err("signing failed")
+        })();
+        assert!(result.is_err());
+        assert!(!root.exists());
+    }
 
     #[test]
     fn rejects_escaping_archive_members_before_bundle_loading() {

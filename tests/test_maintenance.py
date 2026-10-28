@@ -12,6 +12,21 @@ from iphone_detector.storage import write_json
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_dead_native_temporary_files_are_cleaned_without_removing_receipts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = root / "automation-runs/failed"
+            temporary = job / "native-temp-test"
+            extracted = temporary / "Payload/App.app"
+            extracted.mkdir(parents=True)
+            (extracted / "binary").write_bytes(b"temporary")
+            write_json(job / "result.json", {"ok": False})
+            os.utime(temporary, (1, 1))
+            with patch("iphone_detector.worker_registry.active_jobs", return_value=[]):
+                self.assertEqual(maintenance._clean_locked(root), 1)
+            self.assertFalse(temporary.exists())
+            self.assertTrue((job / "result.json").exists())
+
     def test_cleanup_removes_only_old_completed_logs_and_terminal_records(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

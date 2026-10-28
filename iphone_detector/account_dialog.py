@@ -215,23 +215,49 @@ class AccountDialog:
                     self.start_button.configure(state="normal")
                     self.picker.configure(state="readonly")
                 elif stage == "complete":
-                    try:
-                        number = append_account(event["email"], self.source, self.signature)
-                    except (ValueError, RuntimeError, OSError) as exc:
-                        self.status.set("Signed in, but assignment needs attention: " + str(exc))
-                        self.running = False
-                        self.start_button.configure(state="normal")
-                        self.picker.configure(state="readonly")
+                    if getattr(self, "saving", False):
                         continue
+                    self.saving = True
+                    self.status.set("Checking the IPA and saving your account…")
+                    email, source, signature = event["email"], self.source, self.signature
+
+                    def save_account():
+                        try:
+                            number = append_account(email, source, signature)
+                            self.events.put({"stage": "saved", "number": number})
+                        except Exception:
+                            self.events.put(
+                                {
+                                    "stage": "save_failed",
+                                    "message": "Signed in, but the assignment could not be saved. Check the IPA and try again.",
+                                }
+                            )
+
+                    threading.Thread(
+                        target=save_account, daemon=True, name="save-apple-account"
+                    ).start()
+                elif stage == "save_failed":
+                    self.saving = False
+                    self.running = False
+                    self.status.set(event["message"])
+                    self.start_button.configure(state="normal")
+                    self.picker.configure(state="readonly")
+                elif stage == "saved":
+                    self.saving = False
                     self.closed = True
                     self.window.destroy()
-                    self.on_saved(number)
+                    self.on_saved(event["number"])
                     return
         except queue.Empty:
             pass
         self.window.after(100, self.poll)
 
     def cancel(self):
+        if getattr(self, "saving", False):
+            self.status.set(
+                "Finishing the assignment. You can close this window when it completes."
+            )
+            return
         self.closed = True
         if self.session and self.loop and self.loop.is_running():
             asyncio.run_coroutine_threadsafe(self.session.close(), self.loop)

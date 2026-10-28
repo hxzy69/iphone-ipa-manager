@@ -106,6 +106,24 @@ def index_path(root, serial, entry):
     return root / "account-outcomes" / (hashlib.sha256(key.encode()).hexdigest() + ".json")
 
 
+def installed_content_matches(root, serial, entry):
+    """Profile renewal is valid only for content with a verified full install."""
+    receipt = read(index_path(root, serial, entry))
+    installed = receipt.get("installed_selection")
+    if not isinstance(installed, dict):
+        # Older full-install receipts already contain the necessary evidence.
+        installed = receipt.get("selection") if receipt.get("operation") == "install" else None
+    return (
+        receipt.get("verified") is True
+        and finite_number(receipt.get("at"))
+        and 0 <= receipt["at"] <= time.time() + 5
+        and selection_matches(
+            {"serial": receipt.get("serial"), "accounts": [installed]},
+            {"serial": serial, "accounts": [entry]},
+        )
+    )
+
+
 def record(job, request, number, operation="install"):
     entry = next((a for a in request.get("accounts", []) if a.get("account") == number), None)
     if entry is None or operation not in ("install", "refresh"):
@@ -141,6 +159,13 @@ def record(job, request, number, operation="install"):
         "at": time.time(),
         "profile_expires_at": expires,
     }
+    if operation == "install":
+        receipt["installed_selection"] = entry
+    elif installed_content_matches(job.parent.parent, request.get("serial"), entry):
+        previous = read(index_path(job.parent.parent, request.get("serial"), entry))
+        receipt["installed_selection"] = previous.get(
+            "installed_selection", previous.get("selection")
+        )
     write_json(job / f"completed-{number}.json", receipt)
     if job.parent.name in ("automation-runs", "gui-jobs"):
         write_json(index_path(job.parent.parent, request.get("serial"), entry), receipt)

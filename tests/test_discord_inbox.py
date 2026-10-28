@@ -221,7 +221,8 @@ class DiscordInboxTests(unittest.TestCase):
             )
             started = []
 
-            async def install_account(index, interaction):
+            async def install_account(index, interaction, expected=None):
+                self.assertEqual(expected, {"email": "b@example.com", "ipa": "x"})
                 started.append((index, interaction))
 
             async def check():

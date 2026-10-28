@@ -11,7 +11,9 @@ the IPA, so the displayed app name can differ from its filename.
 
 Saving checks the complete archive and updates the same settings used by the
 desktop, Discord and automatic renewal. It replaces only the selected account's
-IPA assignment. It does not copy, delete or install the file. The next install,
+IPA assignment. Each account has exactly one saved IPA: choosing a different file
+replaces the previous assignment rather than adding another one. It does not copy,
+delete or install the file. The next install,
 refresh or automatic renewal uses the new assignment; a changed IPA receives a
 full installation through the existing pending-assignment workflow.
 

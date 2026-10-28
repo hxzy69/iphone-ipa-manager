@@ -10,6 +10,73 @@ from iphone_detector import ipa_library as library
 
 
 class LibraryTests(unittest.TestCase):
+    def test_reassigning_replaces_the_only_ipa_and_pending_install(self):
+        from fixtures import write_sample_app
+        from iphone_detector.discord_inbox import assign_managed, assign_received
+        from iphone_detector.settings import get_workflow
+
+        for assign in (assign_managed, assign_received):
+            with self.subTest(assign=assign.__name__):
+                managed = self.folder / assign.__name__
+                incoming = managed / "incoming"
+                incoming.mkdir(parents=True)
+                config = {
+                    "automation": {
+                        "ipa_directory": str(managed),
+                        "import_directory": str(incoming),
+                        "accounts": [
+                            {"email": "one@example.com", "ipa": "Previous"},
+                            {"email": "two@example.com", "ipa": "OtherApp"},
+                        ],
+                        "pending_ipa_installs": {"2": "OtherApp"},
+                    }
+                }
+                folder = managed if assign is assign_managed else incoming
+                files = [folder / "First.ipa", folder / "Replacement.ipa"]
+                for path in files:
+                    with zipfile.ZipFile(path, "w") as archive:
+                        write_sample_app(archive)
+                with (
+                    patch("iphone_detector.config.load_config", return_value=config),
+                    patch("iphone_detector.config.save_config"),
+                ):
+                    assigned = []
+                    for path in files:
+                        stat = path.stat()
+                        assigned.append(
+                            assign(
+                                path,
+                                (stat.st_size, stat.st_mtime_ns),
+                                0,
+                                expected_email="one@example.com",
+                            )
+                        )
+                    self.assertEqual(
+                        [item["ipa"] for item in get_workflow(config)],
+                        [assigned[1].stem, "OtherApp"],
+                    )
+                    self.assertEqual(
+                        config["automation"]["pending_ipa_installs"],
+                        {"1": assigned[1].stem, "2": "OtherApp"},
+                    )
+                    rows = {item.path: item for item in library.scan(config)}
+                    self.assertEqual(rows[assigned[0]].accounts, ())
+                    self.assertEqual(rows[assigned[1]].accounts, (1,))
+
+    def test_account_schema_rejects_multiple_ipas_or_duplicate_apple_accounts(self):
+        from iphone_detector.settings import get_workflow
+
+        for accounts in (
+            [{"email": "one@example.com", "ipa": ["First", "Second"]}],
+            [
+                {"email": "one@example.com", "ipa": "First"},
+                {"email": "ONE@example.com", "ipa": "Second"},
+            ],
+        ):
+            with self.subTest(accounts=accounts):
+                with self.assertRaises(ValueError):
+                    get_workflow({"automation": {"accounts": accounts}})
+
     def test_readable_metadata_does_not_bypass_full_assignment_checks(self):
         from iphone_detector.discord_inbox import assign_managed
 

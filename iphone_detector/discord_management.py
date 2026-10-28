@@ -30,6 +30,10 @@ def register(tree, guild, allow, discord, can_suggest=None):
             text[:1950], ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
         )
 
+    from iphone_detector.discord_library import register as register_library
+
+    register_library(tree, guild, allow, can_suggest, discord, reply)
+
     @tree.command(
         name="help", description="Explain commands and the everyday workflow", guild=guild
     )
@@ -42,6 +46,8 @@ def register(tree, guild, allow, discord, can_suggest=None):
             "/login_cancel — cancel an open sign-in dialogue.\n"
             "/accounts — account numbers, Apple accounts and saved apps.\n"
             "/files — browse the PC IPA folder.\n"
+            "/ipa_updates — suggest a newer version for an account.\n"
+            "/assignments — view or restore saved IPA assignments.\n"
             "/inbox — select account first, then type the filename; Save keeps this assignment for future runs.\n"
             "/assign — open the same assignment picker without typing.\n"
             "/sideload [account] — full installation; omit account for all configured accounts.\n"
@@ -49,6 +55,8 @@ def register(tree, guild, allow, discord, can_suggest=None):
             "**Manage and monitor**\n"
             "/panel — buttons for common actions.\n"
             "/status — active job, connection and next renewal.\n"
+            "/progress — account stages and elapsed time.\n"
+            "/setup — guided configuration steps.\n"
             "/updates — running version and official release downloads.\n"
             "/update — prepare a verified update, activate or roll back.\n"
             "/diagnostics — support health flags without accounts, paths or credentials.\n"

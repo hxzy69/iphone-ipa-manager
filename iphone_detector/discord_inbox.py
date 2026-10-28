@@ -119,7 +119,9 @@ def assign_received(source, signature, account, *, expected_email=None):
         lock.close()
 
 
-def assign_managed(source, signature, account, *, expected_email=None):
+def assign_managed(
+    source, signature, account, *, expected_email=None, expected_ipa=None, expected_directory=None
+):
     """Point an account at an IPA already in the managed folder; nothing is copied."""
     from iphone_detector.config import save_config
     from iphone_detector.ipa_inbox import validate_ipa
@@ -127,10 +129,16 @@ def assign_managed(source, signature, account, *, expected_email=None):
 
     lock = RunLock()
     if not lock.acquire():
-        raise RuntimeError("An installation or refresh is running. Try /assign after it finishes.")
+        raise RuntimeError("An installation or refresh is running. Try again after it finishes.")
     try:
 
         def save(config, workflow, source):
+            if expected_ipa is not None and workflow[account]["ipa"] != expected_ipa:
+                raise ValueError("The account assignment changed. Refresh and review it again.")
+            if expected_directory is not None and Path(
+                config.get("automation", {}).get("ipa_directory", "")
+            ) != Path(expected_directory):
+                raise ValueError("The IPA folder changed. Refresh and review it again.")
             validate_ipa(source)
             after = source.stat()
             if (after.st_size, after.st_mtime_ns) != signature:

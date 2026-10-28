@@ -127,7 +127,9 @@ class Controller:
         self._cancel_start = threading.Event()
         self._launch_lock = threading.Lock()
 
-    async def start_async(self, refresh=False, accounts=None, expected_assignment=None):
+    async def start_async(
+        self, refresh=False, accounts=None, expected_assignment=None, expected_review=None
+    ):
         """Keep discovery and IPA hashing off the Discord gateway event loop."""
         if self.starting:
             raise RuntimeError("An installation is already starting.")
@@ -143,6 +145,7 @@ class Controller:
                     if expected_assignment is not None
                     else {}
                 ),
+                **({"expected_review": expected_review} if expected_review is not None else {}),
             )
         )
         try:
@@ -159,7 +162,7 @@ class Controller:
         finally:
             self.starting = False
 
-    def start(self, refresh=False, accounts=None, expected_assignment=None):
+    def start(self, refresh=False, accounts=None, expected_assignment=None, expected_review=None):
         if refresh and accounts is not None:
             raise ValueError("Profile refresh always renews all configured apps.")
         if (self.process is not None and self.process.poll() is None) or (
@@ -212,6 +215,10 @@ class Controller:
                     "Connect the paired iPhone by USB, or configure a local/remote connection. Use /queue to wait for connectivity."
                 )
         config = load_config() or {}
+        if expected_review is not None:
+            from iphone_detector.run_review import verify_scope
+
+            verify_scope(expected_review, config, "refresh" if refresh else "install", accounts)
         chosen = selected_accounts(get_workflow(config), accounts)
         request = make_job(config, "Network", accounts=accounts, stop=preparation_stop)
         from iphone_detector.operations import selection_matches
@@ -226,6 +233,10 @@ class Controller:
             / ("discord-" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
         )
         self.job.mkdir(parents=True)
+        if expected_review is not None:
+            from iphone_detector.storage import write_json
+
+            write_json(self.job / "review-plan.json", expected_review)
         if request.get("serial") and request.get("accounts"):
             from iphone_detector.storage import write_json
 
@@ -272,11 +283,13 @@ class Controller:
             return self.state
 
     def progress(self):
+        from iphone_detector.job_progress import with_elapsed
+
         path = self.job / "backend-events.jsonl"
         try:
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
-            return self.state
+            return with_elapsed(self.job, self.state)
         scope = "" if self.accounts else " of %d" % self.expected
         for line in reversed(lines):
             try:
@@ -338,8 +351,8 @@ class Controller:
                 }.get(route, "")
             except OSError, ValueError, KeyError, TypeError:
                 pass
-            return description
-        return self.state
+            return with_elapsed(self.job, description)
+        return with_elapsed(self.job, self.state)
 
 
 def run():
@@ -465,14 +478,16 @@ def run():
                 """Start a single-account install from a picker; reports in the channel."""
                 await install_interaction.response.defer(ephemeral=True)
                 try:
-                    await controller.start_async(
-                        accounts=[index], expected_assignment=expected_assignment
-                    )
-                    controller.task = asyncio.create_task(report(install_interaction.channel))
-                    await install_interaction.followup.send(
-                        "Started installing account %d only. "
-                        "I’ll report the result in this channel." % (index + 1),
-                        ephemeral=True,
+                    from iphone_detector.discord_review import request
+
+                    await request(
+                        install_interaction,
+                        controller,
+                        report,
+                        allow,
+                        discord,
+                        accounts=[index],
+                        expected_assignment=expected_assignment,
                     )
                 except Exception as exc:
                     LOG.exception("Discord picker install rejected")
@@ -503,12 +518,15 @@ def run():
                     return
                 await interaction.response.defer(ephemeral=True)
                 try:
-                    await controller.start_async(
-                        accounts=[account - 1] if account is not None else None
-                    )
-                    controller.task = asyncio.create_task(report(interaction.channel))
-                    await interaction.followup.send(
-                        "Started. I’ll report the result in this channel.", ephemeral=True
+                    from iphone_detector.discord_review import request
+
+                    await request(
+                        interaction,
+                        controller,
+                        report,
+                        allow,
+                        discord,
+                        accounts=[account - 1] if account is not None else None,
                     )
                 except Exception as exc:
                     LOG.exception("Discord start rejected")
@@ -555,13 +573,9 @@ def run():
                     return
                 await interaction.response.defer(ephemeral=True)
                 try:
-                    await controller.start_async(refresh=True)
-                    controller.task = asyncio.create_task(report(interaction.channel))
-                    await interaction.followup.send(
-                        "Refresh started. Preparing profiles locally, then renewing the installed apps. "
-                        "Use /sideload when you want to install changed IPA contents.",
-                        ephemeral=True,
-                    )
+                    from iphone_detector.discord_review import request
+
+                    await request(interaction, controller, report, allow, discord, refresh=True)
                 except Exception as exc:
                     LOG.exception("Discord refresh rejected")
                     message = (

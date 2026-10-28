@@ -46,7 +46,7 @@ class LibraryDialogTests(unittest.TestCase):
         self.root.tk.call("tk", "scaling", 96 / 72)
         self.root.deiconify()
         dialog = LibraryDialog(self.app, preview=True)
-        dialog.window.geometry("720x560")
+        dialog.window.geometry("760x620")
         self.root.update()
         for widget in (dialog.table, dialog.account, dialog.assign_button, dialog.refresh_button):
             with self.subTest(widget=widget):
@@ -128,7 +128,12 @@ class LibraryDialogTests(unittest.TestCase):
             self.assertEqual(operations[0][1](), 2)
             item = ipa_library.sample_entries()[3]
             save.assert_called_once_with(
-                item.path, item.signature, 1, expected_email="music@example.com"
+                item.path,
+                item.signature,
+                1,
+                expected_email="music@example.com",
+                expected_ipa="Music 4.0",
+                expected_directory=str(item.path.parent),
             )
 
     def test_failed_scan_clears_old_entries_and_disables_assignment(self):

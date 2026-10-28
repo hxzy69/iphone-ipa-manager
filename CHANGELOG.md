@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Suggest newer numeric IPA versions from the managed folder when the bundle ID
+  matches and the newest file is unambiguous. Refresh the open library every
+  15 seconds without automatically downloading, assigning or installing apps.
+- Save the last 100 IPA assignment changes atomically with settings, serialized
+  across processes. Restore a previous assignment through the normal validated
+  path, refusing stale accounts, changed files and missing originals.
+- Add a guided desktop setup covering the IPA folder, USB pairing, Apple sign-in,
+  readiness checks and optional remote/Discord/renewal setup.
+- Add live account stages, elapsed time and actionable failure guidance, without
+  guessing completion times or treating preparation-only results as installs.
+- Replace immediate manual install/refresh starts with a review of account, app,
+  version and expected operation. Recheck reviewed files, phone and account scope
+  before device work. Discord confirmations expire after three minutes.
+- Apply run review to desktop and Discord queue submissions. Existing unattended
+  automatic renewals continue without an interactive confirmation.
+- Add private Discord `/ipa_updates`, `/assignments`, `/progress` and `/setup`
+  commands, with account/history autocomplete and single-use replacement controls.
 - Add a searchable desktop IPA Library with app names, versions, bundle IDs,
   file sizes and account assignments read from each IPA's main app manifest.
 - Assign an IPA to an existing account directly from the library, using the

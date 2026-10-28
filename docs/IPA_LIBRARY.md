@@ -35,3 +35,34 @@ message limit. Use `/inbox` or `/assign` to select the full filename and account
 `/settings` shows the configured folder.
 
 The GUI preview uses sample apps and cannot save assignments or run jobs.
+
+## Newer versions in the folder
+
+While open, the library checks the saved folder every 15 seconds. Choose an
+account to see an available update, then use **Use newer IPA** to replace that
+account's single assignment. This saves the choice without installing it.
+
+Suggestions require the same bundle ID and a strictly newer numeric version.
+They do not compare filenames, guess prerelease ordering, or choose between
+multiple files sharing the newest version. Different variants may still have
+the same bundle ID: inspect the file before accepting a suggestion. Ambiguous
+files and nonnumeric versions remain available for manual assignment.
+The library does not download updates from the internet.
+
+## Assignment history and undo
+
+Open **Assignment history** or use Discord `/assignments`. The last 100 changes
+made by this build are recorded with the saved settings. There is no invented
+history for earlier builds. No Apple password or Discord token is recorded.
+
+Select a change to see both complete filenames. Restoring checks that the account
+still has the recorded replacement and that the previous IPA is available in the
+current managed folder. A changed previous file is rejected when its original
+signature was recorded. The full archive is validated before saving the undo.
+The restored IPA becomes the account's sole assignment and is marked for a full
+installation on the next install or renewal. Undo does not uninstall an app or
+restore an app's data on the phone.
+
+Discord `/ipa_updates` lists suggestions; select an account with autocomplete to
+get its private replacement button. `/assignments action:undo` offers history-entry
+autocomplete and uses the same guarded restore operation as the desktop.

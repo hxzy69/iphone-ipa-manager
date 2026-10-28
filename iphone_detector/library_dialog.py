@@ -18,6 +18,7 @@ class LibraryDialog:
         self.entries = []
         self.visible = []
         self.accounts = []
+        self.suggestions = {}
         self.busy = False
         self.saved_notice = ""
         self.closed = threading.Event()
@@ -33,7 +34,7 @@ class LibraryDialog:
             height=660,
             scrollable=False,
         )
-        size_window(self.window, 980, 660, minimum=(720, 560))
+        size_window(self.window, 980, 700, minimum=(760, 620))
         self.window.bind(
             "<Destroy>",
             self.close,
@@ -100,15 +101,54 @@ class LibraryDialog:
             style="Muted.TLabel",
             wraplength=880,
         ).grid(row=5, column=0, sticky="ew", pady=(8, 0))
-        ttk.Label(footer, textvariable=self.status, wraplength=780).pack(
-            side="left", fill="x", expand=True, padx=(0, 12)
+        actions = ttk.Frame(body)
+        actions.grid(row=6, column=0, sticky="ew", pady=(8, 0))
+        self.update_button = ttk.Button(
+            actions, text="Use newer IPA", command=self.use_update, state="disabled"
         )
+        self.update_button.pack(side="left")
+        ttk.Button(actions, text="Assignment history", command=self.open_history).pack(
+            side="left", padx=8
+        )
+        self.update_note = tk.StringVar()
+        update_area = ttk.Frame(actions)
+        update_area.pack(side="left", fill="x", expand=True)
+        ttk.Label(
+            update_area, textvariable=self.update_note, style="Muted.TLabel", wraplength=480
+        ).pack(fill="x")
+        status_area = ttk.Frame(footer)
+        status_area.pack(side="left", fill="x", expand=True, padx=(0, 12))
+        ttk.Label(status_area, textvariable=self.status, wraplength=780).pack(fill="x")
         self.table.bind("<<TreeviewSelect>>", self.select)
         self.account.bind("<<ComboboxSelected>>", self.select)
         self.query_trace = self.query.trace_add("write", lambda *_: self.filter())
         entry.focus_set()
         self.refresh()
         self.window.after(100, self.poll)
+        self.window.after(15000, self.auto_refresh)
+
+    def auto_refresh(self):
+        if not self.preview and not self.busy:
+            self.refresh(clear=False)
+        self.window.after(15000, self.auto_refresh)
+
+    def open_history(self):
+        from iphone_detector.product_dialogs import AssignmentHistoryDialog
+
+        AssignmentHistoryDialog(self.app, preview=self.preview)
+
+    def use_update(self):
+        suggestion = self.suggestions.get(self.account.current())
+        if self.busy or suggestion is None:
+            return
+        self.query.set("")
+        for index, item in enumerate(self.visible):
+            if item.path == suggestion[1].path:
+                self.table.selection_set(str(index))
+                self.table.see(str(index))
+                self.select()
+                self.assign()
+                return
 
     def close(self, event):
         if event.widget is self.window:
@@ -119,6 +159,7 @@ class LibraryDialog:
         self.busy = True
         self.refresh_button.configure(state="disabled")
         self.assign_button.configure(state="disabled")
+        self.update_button.configure(state="disabled")
         self.account.configure(state="disabled")
         events = self.events
 
@@ -148,7 +189,7 @@ class LibraryDialog:
 
         threading.Thread(target=run, daemon=True).start()
 
-    def refresh(self):
+    def refresh(self, *, clear=True):
         if self.busy:
             return
         if self.preview:
@@ -162,12 +203,14 @@ class LibraryDialog:
 
         def read():
             config = load_config() or {}
-            ipa_library.clear_cache()
+            if clear:
+                ipa_library.clear_cache()
             return ipa_library.scan(config, stop=stop), get_workflow(config)
 
         self.work("scan", read)
 
     def populate(self):
+        self.suggestions = ipa_library.updates(self.entries, self.accounts)
         previous = self.account.get()
         values = [
             "Account %d · %s" % (i + 1, item["email"]) for i, item in enumerate(self.accounts)
@@ -225,6 +268,15 @@ class LibraryDialog:
             if item and not item.error and self.account.current() >= 0 and not self.busy
             else "disabled"
         )
+        suggestion = self.suggestions.get(self.account.current())
+        self.update_button.configure(state="normal" if suggestion and not self.busy else "disabled")
+        self.update_note.set(
+            "%s → %s available" % (suggestion[0].version, suggestion[1].version)
+            if suggestion
+            else "%d account update(s) found" % len(self.suggestions)
+            if self.suggestions
+            else "No unambiguous newer version found"
+        )
 
     def assign(self):
         if self.preview:
@@ -235,12 +287,20 @@ class LibraryDialog:
         if self.busy or not item or item.error or not 0 <= index < len(self.accounts):
             return
         email = self.accounts[index]["email"]
+        previous = self.accounts[index]["ipa"]
         self.status.set("Checking the complete IPA before saving…")
 
         def save():
             from iphone_detector.discord_inbox import assign_managed
 
-            assign_managed(item.path, item.signature, index, expected_email=email)
+            assign_managed(
+                item.path,
+                item.signature,
+                index,
+                expected_email=email,
+                expected_ipa=previous,
+                expected_directory=str(item.path.parent),
+            )
             return index + 1
 
         self.work("assign", save)

@@ -59,6 +59,9 @@ class Preview(App):
             ("Activity & recovery", self.open_dashboard),
             ("Import IPA", self.open_ipa_import),
             ("IPA Library", self.open_library),
+            ("Guided setup", self.open_setup_wizard),
+            ("Live progress", self.open_progress),
+            ("Review changes", self.open_run_review),
             ("Setup checklist", self.open_checklist),
             ("Updates & support", self.open_updates),
             ("Choose iPhone", lambda: self.start("devices")),
@@ -82,6 +85,11 @@ class Preview(App):
     export_support_report = notice
     open_folder = notice
     stop = notice
+
+    def open_run_review(self):
+        from iphone_detector.product_dialogs import RunReviewDialog
+
+        RunReviewDialog(self, "install", self.notice, preview=True)
 
     def start(self, mode):
         if mode == "devices":
@@ -123,6 +131,9 @@ if __name__ == "__main__":
             "renewal",
             "dashboard",
             "library",
+            "setup",
+            "progress",
+            "review",
             "import",
             "checklist",
             "updates",
@@ -141,6 +152,9 @@ if __name__ == "__main__":
         "renewal": app.open_renewal,
         "dashboard": app.open_dashboard,
         "library": app.open_library,
+        "setup": app.open_setup_wizard,
+        "progress": app.open_progress,
+        "review": app.open_run_review,
         "import": app.open_ipa_import,
         "checklist": app.open_checklist,
         "updates": app.open_updates,

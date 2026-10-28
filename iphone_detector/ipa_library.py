@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import zipfile
+import re
 
 from iphone_detector.ipa_inbox import MAX_MEMBERS, MAX_METADATA, parse_manifest
 from iphone_detector.settings import get_workflow
@@ -83,7 +84,7 @@ def clear_cache():
     _metadata.cache_clear()
 
 
-def scan(config, *, stop=None):
+def scan(config, *, stop=None, stems=None):
     """List regular managed files, tolerating files removed during a transfer."""
     folder = Path(
         config.get("automation", {}).get("ipa_directory", Path.home() / "Downloads" / "ipas")
@@ -102,6 +103,8 @@ def scan(config, *, stop=None):
         if stop is not None and stop.is_set():
             break
         if path.suffix.lower() != ".ipa":
+            continue
+        if stems is not None and path.stem.casefold() not in stems:
             continue
         try:
             if path.is_symlink() or path.is_junction() or not path.is_file():
@@ -151,3 +154,40 @@ def sample_entries():
         ),
         LibraryEntry(Path("Video 2.2.ipa"), (86 * 1048576, 0), "Video", "2.2", "com.example.video"),
     ]
+
+
+def version_key(value):
+    """Compare numeric app versions conservatively; never guess prerelease order."""
+    if (
+        not isinstance(value, str)
+        or not re.fullmatch(r"\d+(?:\.\d+){0,7}", value, flags=re.ASCII)
+        or len(value) > 80
+    ):
+        return None
+    parts = [int(part) for part in value.split(".")]
+    return tuple(parts + [0] * (8 - len(parts)))
+
+
+def updates(entries, accounts):
+    """Suggest only an unambiguous newer version with the same bundle ID."""
+    result = {}
+    by_stem = {entry.path.stem.casefold(): entry for entry in entries}
+    for index, account in enumerate(accounts):
+        current = by_stem.get(account["ipa"].casefold())
+        if current is None or current.error or version_key(current.version) is None:
+            continue
+        candidates = [
+            entry
+            for entry in entries
+            if not entry.error
+            and entry.bundle_id == current.bundle_id
+            and version_key(entry.version) is not None
+            and version_key(entry.version) > version_key(current.version)
+        ]
+        if not candidates:
+            continue
+        newest = max(version_key(entry.version) for entry in candidates)
+        candidates = [entry for entry in candidates if version_key(entry.version) == newest]
+        if len(candidates) == 1:
+            result[index] = (current, candidates[0])
+    return result

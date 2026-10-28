@@ -60,7 +60,8 @@ changelog](CHANGELOG.md), [installation guide](docs/INSTALLING.md), and
   on apps, certificates, devices and App IDs still apply.
 - Accepts version changes by choosing a new file; no executable rebuild is needed.
 - The source development build includes an [IPA Library](docs/IPA_LIBRARY.md)
-  for searching app metadata and assigning files to accounts. This feature is
+  with local update suggestions and assignment undo, plus [guided setup,
+  run review and live progress](docs/PRODUCT_WORKFLOWS.md). These features are
   not yet included in the downloadable 0.3.6 release.
 - Validates IPA archives and snapshots assignments before launching jobs.
 - Prefers an authenticated local-network route when available; otherwise uses an

@@ -79,13 +79,20 @@ def pending():
     return [entry for entry in entries() if entry["state"] in ("queued", "running")]
 
 
-def enqueue(mode="install", accounts=None, *, expected_email=None):
+def enqueue(mode="install", accounts=None, *, expected_email=None, expected_review=None):
     from iphone_detector.background import make_job
     from iphone_detector.config import load_config
 
     if mode not in ("install", "refresh") or (mode == "refresh" and accounts is not None):
         raise ValueError("Choose install, or refresh for all accounts.")
-    selection = make_job(load_config() or {}, "Network", accounts=accounts)
+    config = load_config() or {}
+    if expected_review is not None:
+        from iphone_detector.run_review import verify_scope
+
+        verify_scope(expected_review, config, mode, accounts)
+    selection = make_job(config, "Network", accounts=accounts)
+    if expected_review is not None:
+        verify_scope(expected_review, load_config() or {}, mode, accounts)
     if expected_email is not None and (
         accounts is None
         or len(selection["accounts"]) != 1

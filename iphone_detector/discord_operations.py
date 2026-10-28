@@ -249,6 +249,32 @@ def register(tree, guild, allow, can_suggest, discord):
     ):
         if not await allow(interaction):
             return
+        if action in ("install", "refresh"):
+            await interaction.response.defer(ephemeral=True)
+            try:
+                if action == "refresh" and account is not None:
+                    raise ValueError("Queued refresh renews all accounts; leave account empty.")
+                from iphone_detector.discord_review import request as review_request
+
+                await review_request(
+                    interaction,
+                    None,
+                    None,
+                    allow,
+                    discord,
+                    refresh=action == "refresh",
+                    accounts=[account - 1] if account is not None else None,
+                    queued=True,
+                )
+            except (ValueError, OSError) as exc:
+                await interaction.followup.send(
+                    str(exc)[:1000]
+                    if isinstance(exc, ValueError)
+                    else "Could not prepare this review. Check the local log.",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            return
 
         def execute():
             if action in ("startup_on", "startup_off"):
@@ -267,20 +293,6 @@ def register(tree, guild, allow, can_suggest, discord):
                         f"{e['id']} · {e['mode']} · {e['state']}"
                         + (" · " + job_queue.failure_label(e) if job_queue.failure_label(e) else "")
                         for e in values
-                    )
-                )
-            if action in ("install", "refresh"):
-                if action == "refresh" and account is not None:
-                    raise ValueError("Queued refresh renews all accounts; leave account empty.")
-                entry = job_queue.enqueue(action, [account - 1] if account is not None else None)
-                return (
-                    "Queued "
-                    + entry["id"]
-                    + ". Assignments are frozen; changed files pause the queue."
-                    + (
-                        " Windows sign-in startup could not be registered; reopen the app to resume after a reboot."
-                        if not entry.get("startup_registered")
-                        else ""
                     )
                 )
             if action in ("cancel", "dismiss") and request:

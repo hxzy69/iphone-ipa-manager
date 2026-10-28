@@ -13,6 +13,7 @@ from iphone_detector.paths import DATA_ROOT
 class ManagementDialog:
     def __init__(self, app, *, preview=False):
         self.app = app
+        self.preview = preview
         self.events = queues.Queue()
         self.action_events = queues.Queue()
         self.loading = False
@@ -323,23 +324,34 @@ class ManagementDialog:
 
         threading.Thread(target=run, daemon=True).start()
 
-    def enqueue(self, mode):
+    def enqueue(self, mode, reviewed=None):
         from iphone_detector import job_queue
 
         index = self.account.current()
-        label = self.account.get()
         if mode == "install" and index < 0:
             messagebox.showerror("Dashboard", "Choose an account first.", parent=self.window)
             return
+        if reviewed is None:
+            from iphone_detector.product_dialogs import RunReviewDialog
+
+            selected = [index - 1] if mode == "install" and index > 0 else None
+            RunReviewDialog(
+                self.app,
+                mode,
+                lambda review: self.enqueue(mode, reviewed=review),
+                accounts=selected,
+                preview=self.preview,
+                queued=True,
+            )
+            return
 
         def operation():
-            selected = [index - 1] if mode == "install" and index > 0 else None
-            options = {}
-            if selected is not None:
-                prefix = f"{index} — "
-                if not label.startswith(prefix):
-                    raise ValueError("Refresh the dashboard and choose the account again.")
-                options["expected_email"] = label[len(prefix) :]
+            selected = (
+                [row["account"] - 1 for row in reviewed["rows"]] if mode == "install" else None
+            )
+            options = {"expected_review": reviewed}
+            if selected is not None and len(selected) == 1:
+                options["expected_email"] = reviewed["rows"][0]["email"]
             return "Queued " + job_queue.enqueue(mode, selected, **options)["id"]
 
         self.perform(operation)

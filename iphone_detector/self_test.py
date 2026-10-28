@@ -34,6 +34,13 @@ def run(report_path):
         "pymobiledevice3.services.afc",
         "iphone_detector.ipa_library",
         "iphone_detector.library_dialog",
+        "iphone_detector.assignment_history",
+        "iphone_detector.run_review",
+        "iphone_detector.product_dialogs",
+        "iphone_detector.job_progress",
+        "iphone_detector.discord_review",
+        "iphone_detector.discord_library",
+        "iphone_detector.setup_flow",
     ):
         check("import:" + module, lambda name=module: importlib.import_module(name))
 

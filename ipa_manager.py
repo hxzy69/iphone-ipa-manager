@@ -126,6 +126,15 @@ def worker(mode, job, parent_pid=None, accounts=None):
             log.warning("Could not update the automatic renewal schedule.")
 
     try:
+        if (job / "review-plan.json").exists():
+            from iphone_detector.run_review import verify_scope
+            from iphone_detector.job_history import read
+
+            config = load_config() or {}
+            review = read(job / "review-plan.json")
+            verify_scope(
+                review, config, "refresh" if mode == "discord-refresh" else "install", accounts
+            )
         from iphone_detector.worker_registry import register
 
         register(job, mode, accounts)

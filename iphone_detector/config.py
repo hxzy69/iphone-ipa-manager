@@ -2,6 +2,8 @@
 
 import json
 import logging
+from contextlib import contextmanager
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 from iphone_detector.paths import DATA_ROOT
@@ -14,6 +16,25 @@ CONFIG_PATH = PROJECT_ROOT / "config.json"
 
 class ConfigurationError(ValueError):
     pass
+
+
+@contextmanager
+def configuration_guard():
+    """Serialize config/history replacement across desktop and bot processes."""
+    from iphone_detector.run_lock import RunLock
+    from iphone_detector.paths import profile_lock_name
+
+    lock = RunLock()
+    lock.name = profile_lock_name("ConfigStore")
+    deadline = time.monotonic() + 2
+    try:
+        while not lock.acquire():
+            if time.monotonic() >= deadline:
+                raise ConfigurationError("Settings are being saved elsewhere. Try again shortly.")
+            time.sleep(0.02)
+        yield
+    finally:
+        lock.close()
 
 
 def validate_config(value):
@@ -89,8 +110,16 @@ def save_config(config: Dict[str, Any]) -> None:
         config["device"].setdefault("paired_at", datetime.now().isoformat(timespec="seconds"))
     try:
         from iphone_detector.storage import write_json
+        from iphone_detector.assignment_history import record
 
-        write_json(CONFIG_PATH, config)
+        with configuration_guard():
+            try:
+                previous = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
+                validate_config(previous)
+            except OSError, ValueError:
+                previous = {}
+            record(previous, config)
+            write_json(CONFIG_PATH, config)
     except OSError:
         LOG.exception("Could not write %s", CONFIG_PATH)
         raise

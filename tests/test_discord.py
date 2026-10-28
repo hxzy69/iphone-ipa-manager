@@ -326,6 +326,8 @@ class DiscordTests(unittest.TestCase):
                     interaction.followup.send = AsyncMock()
                     interaction.channel.send = AsyncMock()
                     await commands["sideload"].callback(interaction)
+                    view = interaction.followup.send.await_args.kwargs["view"]
+                    await view.children[0].callback(interaction)
                     await controllers[0].task
                     self.assertIn("without a verified", interaction.channel.send.await_args.args[0])
                     await client.close()
@@ -333,6 +335,24 @@ class DiscordTests(unittest.TestCase):
                 with (
                     patch.object(bot, "DATA_ROOT", root),
                     patch.object(bot.Controller, "start", start),
+                    patch(
+                        "iphone_detector.discord_review.plan",
+                        return_value={
+                            "mode": "install",
+                            "token": "sample",
+                            "rows": [
+                                {
+                                    "account": 1,
+                                    "email": "one@example.com",
+                                    "app": "Sample",
+                                    "version": "1",
+                                    "ipa": "Sample.ipa",
+                                    "operation": "Full installation",
+                                }
+                            ],
+                        },
+                    ),
+                    patch("iphone_detector.discord_review.verify"),
                     patch("iphone_detector.logger.setup_logging"),
                     patch("iphone_detector.remote_tunnel.ensure_started"),
                     patch.object(RunLock, "acquire", return_value=True),
@@ -609,6 +629,10 @@ class DiscordTests(unittest.TestCase):
                     "panel",
                     "login",
                     "login_cancel",
+                    "ipa_updates",
+                    "assignments",
+                    "progress",
+                    "setup",
                 },
             )
             for item in commands:

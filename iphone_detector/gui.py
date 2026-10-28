@@ -315,6 +315,10 @@ class App:
         row.pack(fill="x")
         self._button(row, "Add Apple account", self.open_account_dialog).pack(side="left")
         ttk.Button(row, text="Setup guide", command=self.open_guide).pack(side="left", padx=8)
+        ttk.Button(row, text="Guided setup", command=self.open_setup_wizard).pack(
+            side="left", padx=8
+        )
+        ttk.Button(row, text="Live progress", command=self.open_progress).pack(side="left", padx=8)
         ttk.Button(row, text="Setup checklist", command=self.open_checklist).pack(
             side="left", padx=8
         )
@@ -1078,10 +1082,10 @@ class App:
             widget.configure(state="disabled" if busy else "normal")
         self.stop_button.configure(state="normal" if busy else "disabled")
 
-    def start(self, mode):
+    def start(self, mode, reviewed=None):
         if self.process is not None:
             return
-        if mode != "devices" and not self.save():
+        if mode != "devices" and reviewed is None and not self.save():
             return
         if mode not in ("devices",) and not self.accounts:
             messagebox.showinfo(
@@ -1099,10 +1103,25 @@ class App:
                 parent=self.root,
             )
             return
+        if mode in ("run", "watch", "wifi-run") and reviewed is None:
+            from iphone_detector.product_dialogs import RunReviewDialog
+
+            previous = getattr(self, "run_review", None)
+            if previous is not None and previous.window.winfo_exists():
+                previous.window.lift()
+            else:
+                self.run_review = RunReviewDialog(
+                    self, "install", lambda review: self.start(mode, reviewed=review)
+                )
+            return
         self.job = (
             DATA_ROOT / "automation-runs" / ("gui-" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
         )
         self.job.mkdir(parents=True)
+        if reviewed is not None:
+            from iphone_detector.storage import write_json
+
+            write_json(self.job / "review-plan.json", reviewed)
         command = (
             [sys.executable]
             if FROZEN
@@ -1266,6 +1285,16 @@ class App:
             previous.window.lift()
         else:
             self.library = LibraryDialog(self, preview=getattr(self, "preview", False))
+
+    def open_setup_wizard(self):
+        from iphone_detector.product_dialogs import SetupWizard
+
+        SetupWizard(self, preview=getattr(self, "preview", False))
+
+    def open_progress(self):
+        from iphone_detector.product_dialogs import ProgressDialog
+
+        ProgressDialog(self, preview=getattr(self, "preview", False))
 
     def open_dashboard(self):
         from iphone_detector.management_dialog import ManagementDialog

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 — complete Discord panel — 2026-10-28
+
+- Add IPA updates, Assignments, Progress and Guided setup buttons to `/panel`.
+- Document all four commands and their panel actions in the Discord guide.
+- Verify each new panel button dispatches the matching command and retains owner-only access.
+
 ## 0.4.0 — app library and guided workflows — 2026-10-28
 
 - Suggest newer numeric IPA versions from the managed folder when the bundle ID

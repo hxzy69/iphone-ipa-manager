@@ -8,6 +8,40 @@ from iphone_detector import discord_controls as controls, worker_registry as reg
 
 
 class ManagementTests(unittest.TestCase):
+    def test_panel_dispatches_all_four_library_and_workflow_commands(self):
+        import discord
+        from discord import app_commands
+        from iphone_detector.discord_management import register
+
+        async def run():
+            client = discord.Client(intents=discord.Intents.none())
+            tree = app_commands.CommandTree(client)
+            guild = discord.Object(id=2)
+            allow = AsyncMock(return_value=True)
+            item = Mock()
+            item.response.send_message = AsyncMock()
+            register(tree, guild, allow, discord)
+            await tree.get_command("panel", guild=guild).callback(item)
+            view = item.response.send_message.await_args.kwargs["view"]
+            self.assertLessEqual(len(view.children), 25)
+            for name, label in (
+                ("ipa_updates", "IPA updates"),
+                ("assignments", "Assignments"),
+                ("progress", "Progress"),
+                ("setup", "Guided setup"),
+            ):
+                callback = AsyncMock()
+                tree.get_command(name, guild=guild)._callback = callback
+                button = next(child for child in view.children if child.label == label)
+                await button.callback(item)
+                callback.assert_awaited_once_with(item)
+            allow.return_value = False
+            self.assertFalse(await view.interaction_check(item))
+            view.stop()
+            await client.close()
+
+        asyncio.run(run())
+
     def test_files_metadata_reply_is_bounded_and_requires_authorization(self):
         import discord
         from discord import app_commands

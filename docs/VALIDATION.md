@@ -1,5 +1,12 @@
 # Public preview validation
 
+## 0.4.1 — 2026-10-28
+
+Verified with 580 automated tests, 28 packaged runtime checks and release artifact
+validation. The panel regression checks all four command routes, Discord component
+limits and unauthorized-user rejection. This patch retains the complete 0.4.0
+feature set; native signing, transport and dependencies are unchanged.
+
 ## 0.4.0 — 2026-10-28
 
 Verified with 579 isolated automated tests, lint and formatting checks, source

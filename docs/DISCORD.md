@@ -3,6 +3,23 @@
 The bot runs on your own signed-in Windows PC. Discord is a remote control; it is
 not the installer or a cloud storage service for your IPA files.
 
+## Library and workflow commands
+
+These commands are also available as buttons in `/panel`:
+
+| Command | Panel button | Purpose |
+| --- | --- | --- |
+| `/ipa_updates` | IPA updates | Find newer versions in the saved IPA folder; choose an account with autocomplete to review a replacement. |
+| `/assignments` | Assignments | View recent assignment changes. Use `action:undo` and entry autocomplete to restore a previous IPA. |
+| `/progress` | Progress | Show active account stages, elapsed time and recovery guidance. |
+| `/setup` | Guided setup | Show configuration steps and current saved-state checks. |
+
+The panel opens each command's default view. Account and history-entry selections
+remain available through slash-command autocomplete. These controls use the same
+owner, server and channel restrictions as the rest of the bot.
+
+## Configure the bot
+
 1. Create an application at the [Discord Developer Portal](https://discord.com/developers/applications).
 2. Open **Bot**, create/reset its token, and paste it only into this app's local
    **Discord setup** window. Leave the token field blank later to keep it.

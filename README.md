@@ -9,21 +9,21 @@ same saved assignments and job status.
 
 ## Download
 
-The latest Windows release is **0.4.0**.
+The latest Windows release is **0.4.1**.
 
-[**Download Windows installer — 0.4.0**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.0-preview/iPhoneIPAManager-0.4.0-setup-x64.exe)
+[**Download Windows installer — 0.4.1**](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.1-preview/iPhoneIPAManager-0.4.1-setup-x64.exe)
 
-[Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.0-preview/iPhoneIPAManager-0.4.0-windows-x64.zip)
+[Portable Windows x64 ZIP](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.1-preview/iPhoneIPAManager-0.4.1-windows-x64.zip)
 
-[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.4.0-preview)
-· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.0-preview/iPhoneIPAManager-0.4.0-source.zip)
-· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.0-preview/SHA256SUMS.txt)
+[Release notes](https://github.com/hxzy69/iphone-ipa-manager/releases/tag/v0.4.1-preview)
+· [Source code](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.1-preview/iPhoneIPAManager-0.4.1-source.zip)
+· [Checksums](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.1-preview/SHA256SUMS.txt)
 
 Run the setup EXE, or extract the portable ZIP and run `iPhoneIPAManager.exe`. Python is not required. The setup is per-user and does not request elevation.
 
-[Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.0-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
+[Installer checksum](https://github.com/hxzy69/iphone-ipa-manager/releases/download/v0.4.1-preview/SETUP-SHA256SUMS.txt) · [Complete changelog since 0.2.0](CHANGELOG.md)
 
-**Release status: 0.4.0 preview.** Verified with 579 automated tests and 28
+**Release status: 0.4.1 preview.** Verified with 580 automated tests and 28
 packaged runtime checks. This release adds a searchable IPA Library, local update
 suggestions, assignment history and undo, guided setup, live progress and guarded
 run review. See [release validation](docs/VALIDATION.md) for verification details.

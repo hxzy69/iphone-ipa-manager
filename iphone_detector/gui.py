@@ -260,6 +260,7 @@ class App:
         account_tools = ttk.Frame(outer)
         account_tools.pack(fill="x", pady=(0, 12))
         self._button(account_tools, "Add Apple account", self.open_account_dialog).pack(side="left")
+        self._button(account_tools, "IPA Library", self.open_library).pack(side="left", padx=8)
 
         folder_row = ttk.Frame(outer)
         folder_row.pack(fill="x")
@@ -1256,6 +1257,15 @@ class App:
                         )
                     )
                 self.stop_started = None
+
+    def open_library(self):
+        from iphone_detector.library_dialog import LibraryDialog
+
+        previous = getattr(self, "library", None)
+        if previous is not None and previous.window.winfo_exists():
+            previous.window.lift()
+        else:
+            self.library = LibraryDialog(self, preview=getattr(self, "preview", False))
 
     def open_dashboard(self):
         from iphone_detector.management_dialog import ManagementDialog

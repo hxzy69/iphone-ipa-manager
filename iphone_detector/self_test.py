@@ -32,6 +32,8 @@ def run(report_path):
         "wmi",
         "pymobiledevice3.remote.tunnel_service",
         "pymobiledevice3.services.afc",
+        "iphone_detector.ipa_library",
+        "iphone_detector.library_dialog",
     ):
         check("import:" + module, lambda name=module: importlib.import_module(name))
 

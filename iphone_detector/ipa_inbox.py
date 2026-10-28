@@ -15,6 +15,21 @@ MAX_MEMBER = 2 * 1024**3
 MAX_METADATA = 1024 * 1024
 
 
+def parse_manifest(raw):
+    """Normalize failures from untrusted XML and binary property lists."""
+    if len(raw) > MAX_METADATA:
+        raise ValueError("The IPA app metadata is too large.")
+    try:
+        info = plistlib.loads(raw)
+    except Exception:
+        # plistlib also raises ExpatError and AttributeError for malformed XML
+        # dates. Keep parser implementation details out of assignment errors.
+        raise ValueError("The IPA contains invalid app metadata.") from None
+    if not isinstance(info, dict):
+        raise ValueError("The IPA contains invalid app metadata.")
+    return info
+
+
 def validate_ipa(path, *, stop=None):
     """Structural check shared by every Discord/PC assignment path."""
     try:
@@ -67,12 +82,7 @@ def validate_ipa(path, *, stop=None):
                 raise ValueError("The IPA must contain exactly one main iOS app.")
             if archive.getinfo(main[0]).file_size > MAX_METADATA:
                 raise ValueError("The IPA app metadata is too large.")
-            try:
-                info = plistlib.loads(archive.read(main[0]))
-            except plistlib.InvalidFileException, ValueError, TypeError, OverflowError:
-                raise ValueError("The IPA contains invalid app metadata.") from None
-            if not isinstance(info, dict):
-                raise ValueError("The IPA contains invalid app metadata.")
+            info = parse_manifest(archive.read(main[0]))
             executable = info.get("CFBundleExecutable")
             bundle = info.get("CFBundleIdentifier")
             if (

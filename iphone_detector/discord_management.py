@@ -70,7 +70,7 @@ def register(tree, guild, allow, discord, can_suggest=None):
 
     @tree.command(
         name="files",
-        description="Browse available IPA filenames and their account assignments",
+        description="Browse IPA app names, versions, filenames and account assignments",
         guild=guild,
     )
     async def files(interaction: discord.Interaction, page: app_commands.Range[int, 1, 10000] = 1):
@@ -78,30 +78,37 @@ def register(tree, guild, allow, discord, can_suggest=None):
             return
 
         def listing():
-            from iphone_detector.settings import get_workflow
+            from iphone_detector.ipa_library import scan
 
             config = load_config() or {}
-            entries = managed_files(config)
+            entries = scan(config)
             pages = max(1, (len(entries) + 9) // 10)
             if page > pages:
                 raise ValueError("There are %d pages. Use /files page:%d." % (pages, pages))
             lines = ["**IPA files — page %d/%d (%d files)**" % (page, pages, len(entries))]
-            workflow = get_workflow(config)
-            for path in entries[(page - 1) * 10 : page * 10]:
-                assigned = [
-                    str(i + 1) for i, account in enumerate(workflow) if account["ipa"] == path.stem
-                ]
+            for item in entries[(page - 1) * 10 : page * 10]:
+                # Keep every row bounded so ten entries and the footer fit in one reply.
+                def shortened(value, limit):
+                    return value if len(value) <= limit else value[: limit - 1] + "…"
+
+                filename = discord.utils.escape_markdown(shortened(item.path.name, 32))
+                name = discord.utils.escape_markdown(shortened(item.name, 18))
+                version = discord.utils.escape_markdown(shortened(item.version, 8))
                 lines.append(
-                    "%s · %.1f MB%s"
+                    "%s %s · %.1f MB%s\n%s"
                     % (
-                        discord.utils.escape_markdown(path.name)[:140],
-                        path.stat().st_size / 1048576,
-                        " · account " + ", ".join(assigned) if assigned else "",
+                        name,
+                        version or "(unreadable)",
+                        item.size_mb,
+                        " · #" + shortened(",".join(map(str, item.accounts)), 24)
+                        if item.accounts
+                        else "",
+                        filename,
                     )
                 )
             lines.append(
-                "Use /inbox to choose an account and type a filename.\nFolder: "
-                + controls.settings_summary(config)["folder"]
+                "Use /inbox to choose an account and file; /settings shows the folder.\n"
+                "Metadata is for browsing; full checks run when assigning."
             )
             return "\n".join(lines)
 

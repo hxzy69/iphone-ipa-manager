@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Add a searchable desktop IPA Library with app names, versions, bundle IDs,
+  file sizes and account assignments read from each IPA's main app manifest.
+- Assign an IPA to an existing account directly from the library, using the
+  existing shared job lock, archive validation, account identity checks and
+  pending-install tracking used by Discord.
+- Keep library scans and assignment validation off the GUI thread. Show
+  unreadable or changing files without hiding the rest of the library.
+- Show IPA app metadata in Discord `/files`, with bounded, paginated replies.
+- Add an inert library preview and regression tests for metadata, caching,
+  interrupted transfers, asynchronous controls and assignment handoff.
+- Normalize malformed XML/date manifest errors across IPA browsing and importing
+  instead of exposing exceptions from the property-list parser.
+
 ## 0.3.6 — responsive preparation and reliable recovery — 2026-10-28
 
 - Keep queued-request controls available while IPA content is checked, and defer

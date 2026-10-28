@@ -59,6 +59,9 @@ changelog](CHANGELOG.md), [installation guide](docs/INSTALLING.md), and
 - Keeps an ordered list of up to 25 accounts, each assigned one IPA. Apple limits
   on apps, certificates, devices and App IDs still apply.
 - Accepts version changes by choosing a new file; no executable rebuild is needed.
+- The source development build includes an [IPA Library](docs/IPA_LIBRARY.md)
+  for searching app metadata and assigning files to accounts. This feature is
+  not yet included in the downloadable 0.3.6 release.
 - Validates IPA archives and snapshots assignments before launching jobs.
 - Prefers an authenticated local-network route when available; otherwise uses an
   already-established remote tunnel.

@@ -8,6 +8,21 @@ from iphone_detector.ipa_inbox import import_ipa
 
 
 class InboxTests(unittest.TestCase):
+    def test_malformed_xml_and_dates_report_invalid_metadata(self):
+        from iphone_detector.ipa_inbox import validate_ipa
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid.ipa"
+            for raw in (
+                b"<plist><dict>",
+                b"<plist><dict><key>date</key><date>broken</date></dict></plist>",
+            ):
+                with self.subTest(raw=raw):
+                    with zipfile.ZipFile(path, "w") as archive:
+                        archive.writestr("Payload/App.app/Info.plist", raw)
+                    with self.assertRaisesRegex(ValueError, "invalid app metadata"):
+                        validate_ipa(path)
+
     def test_import_name_collision_never_overwrites_an_existing_ipa(self):
         from unittest.mock import Mock, patch
 

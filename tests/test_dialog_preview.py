@@ -87,6 +87,7 @@ class DialogPreviewTests(unittest.TestCase):
                     app.open_discord_setup,
                     app.open_dashboard,
                     app.open_ipa_import,
+                    app.open_library,
                     app.open_checklist,
                     app.open_updates,
                     lambda: app.start("devices"),

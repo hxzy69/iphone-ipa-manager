@@ -8,6 +8,48 @@ from iphone_detector import discord_controls as controls, worker_registry as reg
 
 
 class ManagementTests(unittest.TestCase):
+    def test_files_metadata_reply_is_bounded_and_requires_authorization(self):
+        import discord
+        from discord import app_commands
+        from iphone_detector.discord_management import register
+        from iphone_detector.ipa_library import LibraryEntry
+
+        async def run():
+            client = discord.Client(intents=discord.Intents.none())
+            tree = app_commands.CommandTree(client)
+            guild = discord.Object(id=2)
+            allow = AsyncMock(return_value=True)
+            interaction = Mock()
+            interaction.response.defer = AsyncMock()
+            interaction.followup.send = AsyncMock()
+            entries = [
+                LibraryEntry(
+                    Path("_" * 200 + ".ipa"),
+                    (1, i),
+                    "*" * 200,
+                    "_" * 200,
+                    "org.example",
+                    tuple(range(1, 26)),
+                )
+                for i in range(10)
+            ]
+            with patch("iphone_detector.ipa_library.scan", return_value=entries) as scan:
+                register(tree, guild, allow, discord)
+                command = tree.get_command("files", guild=guild)
+                await command.callback(interaction)
+                text = interaction.followup.send.await_args.args[0]
+                self.assertLessEqual(len(text), 1950)
+                self.assertIn("full checks run when assigning", text)
+                self.assertIn("page 1/1 (10 files)", text)
+                self.assertEqual(text.count("MB"), 10)
+                allow.return_value = False
+                scan.reset_mock()
+                await command.callback(interaction)
+                scan.assert_not_called()
+            await client.close()
+
+        asyncio.run(run())
+
     def test_management_autocomplete_suggests_values_without_leaking_to_other_users(self):
         import discord
         from discord import app_commands
